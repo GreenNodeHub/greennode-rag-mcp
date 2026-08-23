@@ -4,6 +4,7 @@ import type { AuthContext } from "../auth/inbound.js";
 import type { ToolResult } from "../util/result.js";
 import { ok, fail, httpError } from "../util/result.js";
 import { toFormData, type IngestDocumentInput } from "../http/multipart.js";
+import { KbId } from "../schema/backend.js";
 
 const IngestFile = z.object({
   filename: z.string(),
@@ -13,14 +14,14 @@ const IngestFile = z.object({
 }).refine((d) => (d.content !== undefined) !== (d.data !== undefined), { message: "exactly one of content/data is required" });
 
 export const IngestDocumentInputSchema = {
-  kbId: z.string(),
+  kbId: KbId,
   filename: z.string(),
   content: z.string().optional(),
   data: z.string().optional().describe("base64-encoded bytes"),
   mimeType: z.string().optional(),
 };
 export const IngestBatchInputSchema = {
-  kbId: z.string(),
+  kbId: KbId,
   documents: z.array(IngestFile).min(1),
 };
 

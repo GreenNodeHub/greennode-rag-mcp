@@ -2,7 +2,8 @@ import { z } from "zod";
 import type { HandlerDeps } from "./types.js";
 import type { AuthContext } from "../auth/inbound.js";
 import type { ToolResult } from "../util/result.js";
-import { ok, fail, httpError } from "../util/result.js";
+import { ok, okList, fail, httpError } from "../util/result.js";
+import { KbId } from "../schema/backend.js";
 
 function itemsOf(body: unknown): any[] {
   const b = body as any;
@@ -14,7 +15,7 @@ function itemsOf(body: unknown): any[] {
 }
 
 export const ListDocumentsInputSchema = {
-  kbId: z.string(),
+  kbId: KbId,
   page: z.number().int().positive().optional(),
   size: z.number().int().positive().optional(),
 };
@@ -25,11 +26,11 @@ export async function listDocumentsTool(deps: HandlerDeps, auth: AuthContext, ar
     bearerToken: auth.bearerToken,
   });
   if (res.status >= 400) return httpError(res.status, res.body);
-  return ok(res.body);
+  return okList(res.body, deps.config.maxResponseBytes);
 }
 
 export const GetDocumentInputSchema = {
-  kbId: z.string(), documentId: z.string(), maxPages: z.number().int().positive().optional(),
+  kbId: KbId, documentId: z.string(), maxPages: z.number().int().positive().optional(),
 };
 export async function getDocumentTool(deps: HandlerDeps, auth: AuthContext, args: { kbId: string; documentId: string; maxPages?: number }): Promise<ToolResult> {
   const maxPages = args.maxPages ?? deps.config.maxGetDocumentPages;
@@ -44,7 +45,7 @@ export async function getDocumentTool(deps: HandlerDeps, auth: AuthContext, args
 }
 
 export const DeleteDocumentInputSchema = {
-  kbId: z.string(), documentIds: z.array(z.string()).min(1),
+  kbId: KbId, documentIds: z.array(z.string()).min(1),
 };
 export async function deleteDocumentTool(deps: HandlerDeps, auth: AuthContext, args: { kbId: string; documentIds: string[] }): Promise<ToolResult> {
   const res = await deps.backend({ method: "DELETE", path: `/knowledge-bases/${args.kbId}/documents`, body: args.documentIds, bearerToken: auth.bearerToken });
@@ -53,7 +54,7 @@ export async function deleteDocumentTool(deps: HandlerDeps, auth: AuthContext, a
 }
 
 export const GetIngestStatusInputSchema = {
-  kbId: z.string(), documentId: z.string().optional(),
+  kbId: KbId, documentId: z.string().optional(),
 };
 export async function getIngestStatusTool(deps: HandlerDeps, auth: AuthContext, args: { kbId: string; documentId?: string }): Promise<ToolResult> {
   const [kbRes, docsRes] = await Promise.all([

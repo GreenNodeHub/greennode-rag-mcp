@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { listDocumentsTool, getDocumentTool, deleteDocumentTool, getIngestStatusTool } from "./documents.js";
+import { z } from "zod";
+import { listDocumentsTool, getDocumentTool, deleteDocumentTool, getIngestStatusTool, ListDocumentsInputSchema } from "./documents.js";
 import type { BackendClient } from "../http/downstream.js";
 import type { EnvConfig } from "../config/env.js";
 
@@ -41,5 +42,16 @@ describe("getIngestStatusTool", () => {
     const body = JSON.parse(res.content[0].text);
     expect(body.kb).toMatchObject({ id: "kb1" });
     expect(body.documents).toHaveLength(1);
+  });
+});
+
+describe("kbId format guard", () => {
+  it("rejects a kbId containing '/'", () => {
+    const parsed = z.object(ListDocumentsInputSchema).safeParse({ kbId: "a/b" });
+    expect(parsed.success).toBe(false);
+  });
+  it("accepts a well-formed kbId", () => {
+    const parsed = z.object(ListDocumentsInputSchema).safeParse({ kbId: "kb-1_2" });
+    expect(parsed.success).toBe(true);
   });
 });

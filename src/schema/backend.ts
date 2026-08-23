@@ -3,6 +3,9 @@ import { z } from "zod";
 export const FilterOp = z.enum(["equals", "notEquals", "greaterThan", "lessThan", "startsWith", "stringContains"]);
 export const SimpleFilter = z.object({ key: z.string(), op: FilterOp, value: z.any() });
 
+/** Restricted kbId format — guards against path traversal when interpolated into backend paths. */
+export const KbId = z.string().regex(/^[A-Za-z0-9_-]+$/, "invalid kbId");
+
 export interface ChunkDto { content: string; documentId: string; similarity: number; }
 export interface DocumentMetadata { key: string; value: unknown; type: string; }
 export interface DocumentDto { id: string; name: string; size?: number; uploadType: string; metadata?: DocumentMetadata[]; status: string; createdAt?: string; }

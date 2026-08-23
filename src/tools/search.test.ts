@@ -7,7 +7,6 @@ const config = { backendUrl: "x", transport: "stdio", port: 8080, tokenEnv: "T",
 
 describe("searchTool", () => {
   it("resolves scope (all KBs) and POSTs /chunks, returns chunks", async () => {
-    let kbListCall = 0;
     const backend: BackendClient = async (req) => {
       if (req.path === "/knowledge-bases") return { status: 200, body: { items: [{ id: "kb-1" }] } };
       expect(req.method).toBe("POST");

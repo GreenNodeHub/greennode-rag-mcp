@@ -2,8 +2,9 @@ import { z } from "zod";
 import type { HandlerDeps } from "./types.js";
 import type { AuthContext } from "../auth/inbound.js";
 import type { ToolResult } from "../util/result.js";
-import { ok, httpError, fail } from "../util/result.js";
+import { ok, okList, httpError, fail } from "../util/result.js";
 import { resolveSearchScope } from "../scope.js";
+import { KbId } from "../schema/backend.js";
 
 function itemsOf(body: unknown): any[] {
   const b = body as any;
@@ -28,7 +29,7 @@ export async function listKnowledgeBasesTool(deps: HandlerDeps, auth: AuthContex
     const allowed = new Set(scope.kbIds);
     const res = await deps.backend({ method: "GET", path: "/knowledge-bases", query: { page: 1, size: 100 }, bearerToken: auth.bearerToken });
     if (res.status >= 400) return httpError(res.status, res.body);
-    return ok(itemsOf(res.body).filter((k: any) => allowed.has(k?.id)));
+    return okList(itemsOf(res.body).filter((k: any) => allowed.has(k?.id)), deps.config.maxResponseBytes);
   }
   const res = await deps.backend({
     method: "GET", path: "/knowledge-bases",
@@ -36,7 +37,7 @@ export async function listKnowledgeBasesTool(deps: HandlerDeps, auth: AuthContex
     bearerToken: auth.bearerToken,
   });
   if (res.status >= 400) return httpError(res.status, res.body);
-  return ok(res.body);
+  return okList(res.body, deps.config.maxResponseBytes);
 }
 
 export const CreateKnowledgeBaseInputSchema = {
@@ -51,14 +52,14 @@ export async function createKnowledgeBaseTool(deps: HandlerDeps, auth: AuthConte
   return ok(res.body);
 }
 
-export const DeleteKnowledgeBaseInputSchema = { kbId: z.string() };
+export const DeleteKnowledgeBaseInputSchema = { kbId: KbId };
 export async function deleteKnowledgeBaseTool(deps: HandlerDeps, auth: AuthContext, args: { kbId: string }): Promise<ToolResult> {
   const res = await deps.backend({ method: "DELETE", path: `/knowledge-bases/${args.kbId}`, bearerToken: auth.bearerToken });
   if (res.status >= 400) return httpError(res.status, res.body);
   return ok({ deleted: args.kbId });
 }
 
-export const GetKnowledgeBaseInputSchema = { kbId: z.string() };
+export const GetKnowledgeBaseInputSchema = { kbId: KbId };
 export async function getKnowledgeBaseTool(deps: HandlerDeps, auth: AuthContext, args: { kbId: string }): Promise<ToolResult> {
   const res = await deps.backend({ method: "GET", path: `/knowledge-bases/${args.kbId}`, bearerToken: auth.bearerToken });
   if (res.status >= 400) return httpError(res.status, res.body);

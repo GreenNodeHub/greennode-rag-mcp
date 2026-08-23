@@ -8,7 +8,7 @@
 
 ## 1. Goals
 
-A Model Context Protocol server that exposes GreenNode's RAG capabilities (knowledge bases, documents, search, ingest) to MCP clients (LLM agents, Claude Code). The server accepts an OAuth access token from the client and forwards it to the platform. It carries an optional **engine identity** (`engine_id` = a RAG engine / agent name) that scopes retrieval and browsing to the knowledge bases that engine is attached to; without it, the scope is all KBs in the account. The server runs in both dev and prod, selected by deployment config.
+A Model Context Protocol server that exposes GreenNode's RAG capabilities (knowledge bases, documents, search, ingest) to MCP clients (LLM agents, Claude Code). The server accepts an OAuth access token from the client and forwards it to the platform. It carries an optional **engine identity** (`engine` = a RAG engine / agent name) that scopes retrieval and browsing to the knowledge bases that engine is attached to; without it, the scope is all KBs in the account. The server runs in both dev and prod, selected by deployment config.
 
 Non-goals: token minting/validation/refresh (pass-through only), running the RAG engine itself (the backend does), multipart streaming of very large files (50MB backend cap; base64 over JSON-RPC is only practical for small/medium docs), vStorage/S3-prefix ingest (deferred), engine-membership enforcement on document tools (deferred — see §4).
 
@@ -19,19 +19,19 @@ Non-goals: token minting/validation/refresh (pass-through only), running the RAG
 The MCP therefore does **pure pass-through** of the OAuth bearer token (same model as `greennode-agentbase-mcp`):
 
 ```
-MCP client --(Authorization: Bearer <token>, X-Engine-Id?: <name>)--> MCP server --(Authorization: Bearer <token>)--> gateway
+MCP client --(Authorization: Bearer <token>, X-Engine?: <name>)--> MCP server --(Authorization: Bearer <token>)--> gateway
                                                                                                               |
                                                                                                               v  validates token, injects portal-user-id
                                                                                                        agent-platform-api
 ```
 
-The MCP never handles `portal-user-id`. `AuthContext = { bearerToken: string; engineId?: string }`. Entry points:
-- **stdio** (default): bearer read once at boot from the env var named by `TOKEN_ENV` (default `GREENNODE_RAG_TOKEN`); `engineId` read once at boot from `ENGINE_ID` (optional). Missing token exits non-zero at startup; missing `ENGINE_ID` is fine (means "all KBs").
-- **HTTP** (`TRANSPORT=http`): bearer read per request from the `Authorization: Bearer` header (missing → 401); `engineId` read per request from the `X-Engine-Id` header (optional). Per-request scoping lets one HTTP instance serve multiple engines.
+The MCP never handles `portal-user-id`. `AuthContext = { bearerToken: string; engine?: string }`. Entry points:
+- **stdio** (default): bearer read once at boot from the env var named by `TOKEN_ENV` (default `GREENNODE_RAG_TOKEN`); `engine` read once at boot from `ENGINE` (optional). Missing token exits non-zero at startup; missing `ENGINE` is fine (means "all KBs").
+- **HTTP** (`TRANSPORT=http`): bearer read per request from the `Authorization: Bearer` header (missing → 401); `engine` read per request from the `X-Engine` header (optional). Per-request scoping lets one HTTP instance serve multiple engines.
 
 ## 3. Backend reality (constraints that shaped the design)
 
-- **Search** is `POST /knowledge-bases/{kbId}/chunks`. `kbId` may be comma-separated for multi-KB search. Request `{ question*, similarityThreshold (def 0.2), documentFilter? }`. Response is stripped to `Array<{ content, documentId, similarity }>` — no highlights, no chunk id, no doc name, no pagination/total. No top-k param exposed. Hybrid is fixed internally (vector weight `0.3` hardcoded); no pure-vector toggle, no weight knob. **There is no engine-scoped search endpoint** — the caller must resolve `engine_id → kbIds` then call `/chunks`.
+- **Search** is `POST /knowledge-bases/{kbId}/chunks`. `kbId` may be comma-separated for multi-KB search. Request `{ question*, similarityThreshold (def 0.2), documentFilter? }`. Response is stripped to `Array<{ content, documentId, similarity }>` — no highlights, no chunk id, no doc name, no pagination/total. No top-k param exposed. Hybrid is fixed internally (vector weight `0.3` hardcoded); no pure-vector toggle, no weight knob. **There is no engine-scoped search endpoint** — the caller must resolve `engine → kbIds` then call `/chunks`.
 - **documentFilter** is polymorphic: `kind:"simple"` → `{ type, key, value }` with type ∈ `equals|notEquals|greaterThan|lessThan|startsWith|stringContains`; `kind:"compound"` → `{ type, filters: DocumentFilter[] }` (recursive; `type` is a free string, expected `"AND"`/`"OR"`).
 - **RAG engine = agent** (`AgentBuilderEntity`, collection `agent_builders`). `id` is a string `ab-<uuid>`; `name` is unique per user. Engine→KB is **many KBs per engine**, sourced from the `agent_kb_relations` join collection. **Resolution:** `GET /agents?searchName=<name>` (same `portal-user-id` header) returns `ListResponse<AgentBuilderDto>`; each `AgentBuilderDto` embeds `knowledgeBaseInfos: Array<{ id, instruction }>` where `id` is the attached kbId. So the MCP resolves an engine name → kbIds in one call (list, then exact-match `name`).
 - **"All KBs in account"** search has no dedicated endpoint — the caller enumerates via `GET /knowledge-bases` then joins all ids. This is cheap because **quota is 5 KBs/user** — one small list call.
@@ -49,8 +49,8 @@ All results are text-wrapped JSON: `{ content: [{ type:"text", text: JSON.string
 ### Scope resolution (used by `search` and `list_knowledge_bases`)
 
 `resolveSearchScope(auth, deps): Promise<string[]>` returns the in-scope kbIds:
-- `auth.engineId` set → `GET /agents?searchName=<engineId>`; exact-match an item whose `name === engineId`; return its `knowledgeBaseInfos[].id`. No exact match → `fail("engine not found: <engineId>")`. (Name is unique per user, so at most one match.)
-- `auth.engineId` unset → `GET /knowledge-bases?size=100` (paginate if needed; quota 5 ⇒ one page); return all `id`s.
+- `auth.engine` set → `GET /agents?searchName=<engine>`; exact-match an item whose `name === engine`; return its `knowledgeBaseInfos[].id`. No exact match → `fail("engine not found: <engine>")`. (Name is unique per user, so at most one match.)
+- `auth.engine` unset → `GET /knowledge-bases?size=100` (paginate if needed; quota 5 ⇒ one page); return all `id`s.
 
 Resolved per call (no cache for v1; a short TTL cache is a deferred optimization). Empty scope (engine has no KBs attached, or account has none) → `search` returns `[]` with a note; `list_knowledge_bases` returns `[]`.
 
@@ -58,7 +58,7 @@ Resolved per call (no cache for v1; a short TTL cache is a deferred optimization
 
 #### `search` (retrieval)
 - **Input:** `{ question: string, similarityThreshold?: number (def 0.2), filters?: Array<{ key: string, op, value: any }> }`
-- **Scope:** server-determined via `resolveSearchScope` — `engine_id` set → engine's KBs; unset → all account KBs. The caller does not pass `kbIds`.
+- **Scope:** server-determined via `resolveSearchScope` — `engine` set → engine's KBs; unset → all account KBs. The caller does not pass `kbIds`.
 - **Backend:** `POST /knowledge-bases/{join(kbIds,",")}/chunks` with `{ question, similarityThreshold, documentFilter? }`. `documentFilter` from `filters`: 0 → omit; 1 → `{ kind:"simple", type:op, key, value }`; >1 → `{ kind:"compound", type:"AND", filters:[<simple>...] }`.
 - **Returns:** `Array<{ content, documentId, similarity }>`.
 
@@ -100,8 +100,8 @@ Resolved per call (no cache for v1; a short TTL cache is a deferred optimization
 #### `list_knowledge_bases` (kb management)
 - **Input:** `{ page?: number (def 1), size?: number (def 10), searchName?: string, sortBy?: string (def "createdAt"), sortDirection?: string (def "desc") }`
 - **Behavior:**
-  - `engine_id` set → returns only the engine's attached KBs (full DTOs): resolve engine kbIds via `GET /agents?searchName=<engineId>`, list all user KBs via `GET /knowledge-bases`, filter to the engine's kbIds. Pagination params ignored (≤5 KBs).
-  - `engine_id` unset → `GET /knowledge-bases?…` passthrough with the caller's page/size/searchName/sortBy/sortDirection.
+  - `engine` set → returns only the engine's attached KBs (full DTOs): resolve engine kbIds via `GET /agents?searchName=<engine>`, list all user KBs via `GET /knowledge-bases`, filter to the engine's kbIds. Pagination params ignored (≤5 KBs).
+  - `engine` unset → `GET /knowledge-bases?…` passthrough with the caller's page/size/searchName/sortBy/sortDirection.
 - **Returns:** `ListResponse<KnowledgeBaseDto>` (or a filtered array when engine-scoped).
 
 ### TIER 3 — Optional
@@ -132,7 +132,7 @@ Resolved per call (no cache for v1; a short TTL cache is a deferred optimization
 - `get_kb_stats` — the backend exposes no stats and the KB detail DTO carries no counts. Replaced by `get_knowledge_base` (detail).
 
 ### Engine scoping summary
-`engine_id` scopes **`search`** and **`list_knowledge_bases`** only. The document tools (`ingest_document`, `ingest_batch`, `list_documents`, `get_document`, `delete_document`, `get_ingest_status`) and KB management tools (`create_knowledge_base`, `delete_knowledge_base`, `get_knowledge_base`) take an explicit `kbId` (or none) and are **not** engine-scoped — backend `portalUserId` ownership is the boundary. (Full engine-membership enforcement on document tools is deferred.)
+`engine` scopes **`search`** and **`list_knowledge_bases`** only. The document tools (`ingest_document`, `ingest_batch`, `list_documents`, `get_document`, `delete_document`, `get_ingest_status`) and KB management tools (`create_knowledge_base`, `delete_knowledge_base`, `get_knowledge_base`) take an explicit `kbId` (or none) and are **not** engine-scoped — backend `portalUserId` ownership is the boundary. (Full engine-membership enforcement on document tools is deferred.)
 
 ## 5. Architecture & project layout
 
@@ -144,13 +144,13 @@ greennode-rag-mcp/
 ├── tsconfig.json           # ES2022, NodeNext, strict, noEmit, resolveJsonModule
 ├── vitest.config.ts        # globals, node, include src/**/*.test.ts
 ├── Dockerfile
-├── .env.example            # BACKEND_URL (dev/prod commented), TRANSPORT, PORT, GREENNODE_RAG_TOKEN, ENGINE_ID, limits
+├── .env.example            # BACKEND_URL (dev/prod commented), TRANSPORT, PORT, GREENNODE_RAG_TOKEN, ENGINE, limits
 ├── README.md
 └── src/
     ├── index.ts            # entrypoint: loadEnvConfig → branch TRANSPORT (stdio | http)
     ├── app.ts              # express app; POST /mcp (stateless); GET /healthz + /health
     ├── server.ts           # new McpServer({name,version}); registerTools(server, deps, auth)
-    ├── auth/inbound.ts     # authenticate(headers) [http] + authenticateFromEnv(env, cfg) [stdio] → { bearerToken, engineId? }
+    ├── auth/inbound.ts     # authenticate(headers) [http] + authenticateFromEnv(env, cfg) [stdio] → { bearerToken, engine? }
     ├── config/env.ts       # loadEnvConfig(env)
     ├── scope.ts            # resolveSearchScope(auth, deps) → kbIds[] (engine via GET /agents?searchName, or all via GET /knowledge-bases)
     ├── http/
@@ -175,7 +175,7 @@ greennode-rag-mcp/
 | `TRANSPORT` | `stdio` | `stdio` or `http`; throws on other values. |
 | `PORT` | `8080` | HTTP listen port. |
 | `TOKEN_ENV` | `GREENNODE_RAG_TOKEN` | Name of the env var holding the token (stdio only). |
-| `ENGINE_ID` | — (optional) | stdio only: RAG engine (agent name) to scope `search`/`list_knowledge_bases` to. Omit → all KBs in account. (HTTP uses the `X-Engine-Id` header per request.) |
+| `ENGINE` | — (optional) | stdio only: RAG engine (agent name) to scope `search`/`list_knowledge_bases` to. Omit → all KBs in account. (HTTP uses the `X-Engine` header per request.) |
 | `MAX_RESPONSE_BYTES` | `25000` | Safety cap on list responses (truncated with a notice). |
 | `DEFAULT_PAGE_SIZE` | `10` | Default `size` for list tools. |
 | `MAX_GET_DOCUMENT_PAGES` | `10` | Bounds the `get_document` scan. |
@@ -187,13 +187,13 @@ No dev/prod lookup in code — the deployment sets `BACKEND_URL`. `.env.example`
 Endpoints sit under `/agent-api/knowledge-bases/…` and `/agent-api/agents/…`. The dev script loads `.env` via Node 20 `--env-file`.
 
 ### Bootstrap (`index.ts`)
-Build config once. **stdio**: `authenticateFromEnv` once at boot (token + optional `ENGINE_ID`) → one long-lived `McpServer` + `StdioServerTransport`; all diagnostics to stderr (stdout is the protocol). **http**: express app; per request `authenticate(req.headers)` (bearer + optional `X-Engine-Id`) → fresh `McpServer` + `StreamableHTTPServerTransport({ sessionIdGenerator: undefined })` (stateless); `res.on("close")` closes the transport+server.
+Build config once. **stdio**: `authenticateFromEnv` once at boot (token + optional `ENGINE`) → one long-lived `McpServer` + `StdioServerTransport`; all diagnostics to stderr (stdout is the protocol). **http**: express app; per request `authenticate(req.headers)` (bearer + optional `X-Engine`) → fresh `McpServer` + `StreamableHTTPServerTransport({ sessionIdGenerator: undefined })` (stateless); `res.on("close")` closes the transport+server.
 
 ## 6. Data flow & error handling
 
 **Request flow** (e.g. `search`): `callTool` → handler calls `resolveSearchScope(auth, deps)` to get kbIds → builds `{ method, path, query, body, bearerToken }` → `callBackend` attaches `Authorization: Bearer ${bearerToken}` + `Accept: application/json`, calls `fetch(BACKEND_URL + path + "?" + query, init)`, JSON-parses the body only if `content-type` includes `application/json` → returns `{ status, body }` → handler maps to `ok(body)` or `httpError(status, body)`. `callBackend` takes an injectable `FetchLike` for tests.
 
-**Scope resolution** (`scope.ts`): `resolveSearchScope` either calls `GET /agents?searchName=<engineId>` (engine case — exact-match `name`, read `knowledgeBaseInfos[].id`) or `GET /knowledge-bases?size=100` (all case — collect all ids). Both reuse `callBackend` with the bearer. Errors (engine not found, backend 4xx/5xx) map to `fail(...)` / `httpError(...)`.
+**Scope resolution** (`scope.ts`): `resolveSearchScope` either calls `GET /agents?searchName=<engine>` (engine case — exact-match `name`, read `knowledgeBaseInfos[].id`) or `GET /knowledge-bases?size=100` (all case — collect all ids). Both reuse `callBackend` with the bearer. Errors (engine not found, backend 4xx/5xx) map to `fail(...)` / `httpError(...)`.
 
 **Multipart** (`ingest_document`/`ingest_batch`): `toFormData` builds a `FormData`; per doc, `content` → `Buffer.from(content,"utf8")`, `data` → `Buffer.from(data,"base64")`, wrapped in `new Blob([bytes], { type: mimeType ?? "application/octet-stream" })`, `form.append("files", blob, filename)`. `fetch` sets the multipart `Content-Type`/boundary automatically. No manual boundary construction.
 
@@ -207,10 +207,10 @@ Build config once. **stdio**: `authenticateFromEnv` once at boot (token + option
 
 ## 7. Testing
 
-- **Unit (co-located):** `config/env.test.ts` (throws on missing `BACKEND_URL` / invalid `TRANSPORT`), `auth/inbound.test.ts` (bearer + `X-Engine-Id` extraction, missing-token), `scope.test.ts` (engine exact-match → kbIds; engine not found; all-KBs enumeration; both with a fake fetch), `http/downstream.test.ts` (injectable `FetchLike` — asserts `Authorization` header, query/body wiring, `{status,body}` return), `http/multipart.test.ts` (text + base64 → `FormData` parts with right filenames), `tools/*.test.ts` (each handler with a fake fetch + fake scope: asserts outbound method/path/body and maps a canned response; `search`/`list_knowledge_bases` tested with both engine-set and engine-unset scopes).
+- **Unit (co-located):** `config/env.test.ts` (throws on missing `BACKEND_URL` / invalid `TRANSPORT`), `auth/inbound.test.ts` (bearer + `X-Engine` extraction, missing-token), `scope.test.ts` (engine exact-match → kbIds; engine not found; all-KBs enumeration; both with a fake fetch), `http/downstream.test.ts` (injectable `FetchLike` — asserts `Authorization` header, query/body wiring, `{status,body}` return), `http/multipart.test.ts` (text + base64 → `FormData` parts with right filenames), `tools/*.test.ts` (each handler with a fake fetch + fake scope: asserts outbound method/path/body and maps a canned response; `search`/`list_knowledge_bases` tested with both engine-set and engine-unset scopes).
 - **In-process round-trip** (`server.test.ts`): `InMemoryTransport.createLinkedPair()` links a real `McpServer` to a `Client`; assert `listTools()` returns exactly the 11 names, and `callTool` on each exercises its handler with a fake fetch.
-- **HTTP** (`app.test.ts`): `supertest` — `GET /healthz` → 200; `POST /mcp` without `Authorization` → 401; with bearer (+ optional `X-Engine-Id`) → round-trip.
-- **stdio smoke** (`stdio.smoke.test.ts`): `spawnSync tsx src/index.ts` with hermetic env — missing token exits non-zero; with token (+ optional `ENGINE_ID`), `tools/list` over stdin returns 11 tools.
+- **HTTP** (`app.test.ts`): `supertest` — `GET /healthz` → 200; `POST /mcp` without `Authorization` → 401; with bearer (+ optional `X-Engine`) → round-trip.
+- **stdio smoke** (`stdio.smoke.test.ts`): `spawnSync tsx src/index.ts` with hermetic env — missing token exits non-zero; with token (+ optional `ENGINE`), `tools/list` over stdin returns 11 tools.
 
 ## 8. Out of scope / deferred
 

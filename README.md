@@ -1,43 +1,208 @@
 # greennode-rag-mcp
 
-MCP server for GreenNode RAG (knowledge bases, documents, search, ingest). Proxies `agent-platform-api` via its public gateway with pass-through OAuth bearer auth and optional `engine` (agent name) scoping.
+An MCP server that exposes the GreenNode RAG REST APIs (knowledge bases, documents, search, ingest) as **11 tools**. It proxies `agent-platform-api` via its public gateway with pass-through OAuth bearer auth and optional `engine` (agent name) scoping. Runs locally over **stdio** (default) or remotely over **streamable HTTP**, with any MCP-speaking client.
+
+## Table of contents
+
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Transports: stdio vs. streamable HTTP](#transports-stdio-vs-streamable-http)
+- [Configuration](#configuration)
+- [Development & operations](#development--operations)
+- [Further reading](#further-reading)
 
 ## Quick start
 
+Connect a local MCP client (Claude Code, Cursor, Windsurf, …) to the server over stdio in under a minute.
+
+**Prerequisites**
+
+- Node.js ≥ 20 (see `package.json` `engines`)
+- The `agent-platform-api` gateway base URL (`BACKEND_URL`) and an OAuth bearer token valid against it
+
+**1. Install**
+
 ```bash
+git clone https://github.com/GreenNodeHub/greennode-rag-mcp.git
+cd greennode-rag-mcp
 npm ci
-BACKEND_URL=https://aiplatform.console-dev.vngcloud.tech/agent-api GREENNODE_RAG_TOKEN=<token> npm start
 ```
 
-stdio is the default transport. For HTTP: set `TRANSPORT=http` and `PORT`.
-
-### Engine scoping
-
-Set `ENGINE=<agent name>` (stdio) or send `X-Engine: <agent name>` (HTTP) to scope `search` and `list_knowledge_bases` to that engine's attached KBs. Omit to use all KBs in the account.
-
-### Loading a .env file (dev)
+**2. Run** (stdio is the default transport — no need to set `TRANSPORT`)
 
 ```bash
-node --env-file=.env --import tsx src/index.ts
+BACKEND_URL=https://aiplatform.console-dev.vngcloud.tech/agent-api \
+GREENNODE_RAG_TOKEN=<your-token> \
+npm start
 ```
+
+**3. Wire up your client.** Claude Code — `.mcp.json`:
+
+```jsonc
+{
+  "mcpServers": {
+    "greennode-rag": {
+      "command": "npx",
+      "args": ["tsx", "src/index.ts"],
+      "env": {
+        "BACKEND_URL": "https://aiplatform.console-dev.vngcloud.tech/agent-api",
+        "GREENNODE_RAG_TOKEN": "<your-token>"
+      }
+    }
+  }
+}
+```
+
+Add `"ENGINE": "<agent name>"` to `env` to scope `search` and `list_knowledge_bases` to that engine's attached knowledge bases; omit it to use every KB in the account. For Cursor, Windsurf, Cline, Roo Code, Claude Desktop, and other clients, use the same command + env under each client's own config key.
+
+**First call flow:** `list_knowledge_bases` → `list_documents` → `search` (see [How it works](#how-it-works)).
+
+## How it works
+
+The server exposes 11 tools that map onto the `agent-platform-api` RAG endpoints. Auth is pass-through: the MCP server forwards the caller's OAuth bearer to the gateway and never handles `portal-user-id` — the gateway validates the token and injects ownership. When an `engine` (agent name) is set, the server resolves it to KB ids via `GET /agents?searchName=` and scopes `search` / `list_knowledge_bases` to those KBs.
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│  MCP client (Claude Code, Cursor, …)                          │
+│    stdio JSON-RPC  ·or·  streamable HTTP (POST /mcp)          │
+└───────────────────────────────────────────────────────────────┘
+                          ▼
+┌───────────────────────────────────────────────────────────────┐
+│  greennode-rag-mcp  (hand-written TypeScript)                 │
+│    • 11 tools: search, ingest_*, documents, knowledge_bases   │
+│    • inbound auth: env token (stdio) / Authorization header   │
+│    • engine scoping: ENGINE env / X-Engine header → KB ids    │
+│    • list-response truncation (MAX_RESPONSE_BYTES)            │
+└───────────────────────────────────────────────────────────────┘
+                          ▼  pass-through OAuth bearer
+┌───────────────────────────────────────────────────────────────┐
+│  agent-platform-api gateway  (BACKEND_URL)                    │
+│    validates bearer, injects ownership — MCP never sees it    │
+└───────────────────────────────────────────────────────────────┘
+```
+
+### Tools (11)
+
+| Tool | Key args | Notes |
+|---|---|---|
+| `search` | `question`, `filters?` | Semantic search over in-scope KB(s); returns chunks `{content, documentId, similarity}` |
+| `ingest_document` | `kbId`, `filename`, `content` ∣ `data` (base64), `mimeType?` | One file; async — poll `get_ingest_status` |
+| `ingest_batch` | `kbId`, `documents[]` | Multiple files in one call |
+| `get_ingest_status` | `kbId`, `documentId?` | Poll KB + document ingest status |
+| `list_documents` | `kbId`, `page?`, `size?` | Paginated |
+| `get_document` | `kbId`, `documentId`, `maxPages?` | Lists client-side; bounded by `maxPages` |
+| `delete_document` | `kbId`, `documentIds[]` | Batch delete |
+| `list_knowledge_bases` | `page?`, `size?`, `searchName?` | When engine set, only the engine's KBs |
+| `create_knowledge_base` | `name`, `description`, `embeddingModel`, … | — |
+| `get_knowledge_base` | `kbId` | — |
+| `delete_knowledge_base` | `kbId` | Fails if agents still use it |
+
+```jsonc
+// 1) orient on the available knowledge bases
+list_knowledge_bases()
+// → [{ "id": "kb-1", "name": "docs", … }, …]
+
+// 2) see what's inside one
+list_documents({ kbId: "kb-1" })
+// → [{ "id": "d-1", "name": "handbook.pdf", "status": "ACTIVE", … }, …]
+
+// 3) ask a question over the in-scope KB(s)
+search({ question: "how do I rotate a token?" })
+// → [{ "content": "…", "documentId": "d-1", "similarity": 0.83 }, …]
+```
+
+Ingest is async — `ingest_document` / `ingest_batch` return immediately; pair them with `get_ingest_status` to poll until `ACTIVE`.
+
+## Transports: stdio vs. streamable HTTP
+
+| | stdio | streamable HTTP |
+|---|---|---|
+| Use case | local, any MCP client | deployed runtime / remote clients |
+| Default | yes (`TRANSPORT=stdio`) | opt-in (`TRANSPORT=http`) |
+| Lifecycle | one server for the process lifetime | fresh server + transport per request (stateless) |
+| Token source | env var named by `TOKEN_ENV` (default `GREENNODE_RAG_TOKEN`) | `Authorization: Bearer` header, per request |
+| Engine source | `ENGINE` env var | `X-Engine` header, per request |
+| Endpoint | stdin/stdout (JSON-RPC) | `POST /mcp` |
+| Health | — | `GET /healthz`, `GET /health` |
+
+### stdio (default)
+
+The server reads JSON-RPC from stdin and writes responses to stdout. **stdout is the protocol** — all diagnostics and the one-line startup banner go to stderr, so they never corrupt the stream.
+
+```bash
+BACKEND_URL=https://aiplatform.console-dev.vngcloud.tech/agent-api \
+GREENNODE_RAG_TOKEN=<your-token> \
+npm start                     # TRANSPORT=stdio is the default
+```
+
+The token is read **once at startup** from the env var named by `TOKEN_ENV` (default `GREENNODE_RAG_TOKEN`). The server runs for the process lifetime and exits when the client closes stdin. See [Quick start](#quick-start) for the client-wiring snippet.
+
+### Streamable HTTP
+
+For a deployed runtime or remote clients. Each `POST /mcp` builds a fresh server + `StreamableHTTPServerTransport` for that request (stateless) and authenticates from the `Authorization` header. The token is **not** read from the environment in this mode.
+
+```bash
+TRANSPORT=http \
+BACKEND_URL=https://aiplatform.console.greennode.ai/agent-api \
+npm start                     # listens on :8080 (PORT); pass the token per request, not via env
+```
+
+Smoke-test it:
+
+```bash
+curl http://localhost:8080/healthz          # → {"ok":true}
+
+# a raw initialize request to /mcp (clients normally build this JSON-RPC envelope for you)
+curl -X POST http://localhost:8080/mcp \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
+```
+
+To scope to an engine in HTTP mode, add `-H "X-Engine: <agent name>"`.
 
 ## Configuration
 
-See `.env.example`. `BACKEND_URL` is required (dev/prod values documented inline). Dev: `https://aiplatform.console-dev.vngcloud.tech/agent-api`; prod: `https://aiplatform.console.greennode.ai/agent-api`.
+All config is via environment variables, read once at startup by `loadEnvConfig` (`src/config/env.ts`). No dotenv — set vars in the shell, or for dev use Node 20's built-in `--env-file`: `node --env-file=.env --import tsx src/index.ts`.
 
-## Tools (11)
+| Var | Default | Notes |
+|---|---|---|
+| `BACKEND_URL` | — | **Required.** `agent-platform-api` gateway base URL. Dev: `https://aiplatform.console-dev.vngcloud.tech/agent-api`; prod: `https://aiplatform.console.greennode.ai/agent-api`. |
+| `TRANSPORT` | `stdio` | `stdio` or `http`. Any other value throws at boot — the process exits non-zero, nothing listens. |
+| `GREENNODE_RAG_TOKEN` | — | Upstream OAuth bearer, **stdio only**. Forwarded to the gateway on every call. |
+| `TOKEN_ENV` | `GREENNODE_RAG_TOKEN` | Name of the env var that holds the token, **stdio only**. Set this to read the token from a differently-named var. |
+| `ENGINE` | — | Optional RAG engine / agent name, **stdio only**. Scopes `search` + `list_knowledge_bases` to that engine's KBs. |
+| `PORT` | `8080` | HTTP transport listen port. |
+| `MAX_RESPONSE_BYTES` | `25000` | Hard cap on list responses; over-cap responses are truncated with a notice. |
+| `DEFAULT_PAGE_SIZE` | `10` | Default `size` for `list_documents` / `list_knowledge_bases`. |
+| `MAX_GET_DOCUMENT_PAGES` | `10` | Max pages `get_document` will scan before giving up. |
 
-Core: `search`, `ingest_document`, `get_ingest_status`, `delete_document`, `get_document`.
-Recommended: `list_documents`, `ingest_batch`, `list_knowledge_bases`.
-Optional: `create_knowledge_base`, `delete_knowledge_base`, `get_knowledge_base`.
+> In **streamable HTTP** mode the token and engine are not read from env at all — clients supply them per request via `Authorization: Bearer` and `X-Engine`. `GREENNODE_RAG_TOKEN` / `TOKEN_ENV` / `ENGINE` apply only to stdio.
 
-## Scripts
+## Development & operations
 
-- `npm test` — vitest run
-- `npm run build` — typecheck (tsc --noEmit)
-- `npm run dev` — tsx watch
-- `npm start` — tsx src/index.ts
+**Scripts** (`package.json`):
 
-## Design
+| Script | What it does |
+|---|---|
+| `npm start` | Run the server (`tsx src/index.ts`) |
+| `npm run dev` | Run with reload (`tsx watch src/index.ts`) |
+| `npm run build` | Typecheck only (`tsc --noEmit`). There is no compiled `dist/` — the runnable form is `tsx`. |
+| `npm test` / `npm run test:watch` | Vitest |
 
-See `docs/superpowers/specs/2026-08-23-rag-mcp-design.md`.
+**Docker:**
+
+```bash
+docker build -t greennode-rag-mcp .
+docker run -p 8080:8080 greennode-rag-mcp
+```
+
+The shipped `Dockerfile` bakes `ENV TRANSPORT=http` and exposes `8080`, so the container runs in streamable-HTTP mode by default. The bearer token is supplied per request via the `Authorization` header (same as HTTP mode) — not via env.
+
+## Further reading
+
+- [`.env.example`](.env.example) — all config vars with defaults
+- [`docs/superpowers/specs/2026-08-23-rag-mcp-design.md`](docs/superpowers/specs/2026-08-23-rag-mcp-design.md) — design doc (tools, auth, transports, engine scoping)
+- [`docs/superpowers/specs/2026-08-24-ingest-from-disk-design.md`](docs/superpowers/specs/2026-08-24-ingest-from-disk-design.md) — planned `ingest_file` / `ingest_files` path tools (local stdio only)
+- [`docs/superpowers/plans/2026-08-23-rag-mcp.md`](docs/superpowers/plans/2026-08-23-rag-mcp.md) — implementation plan

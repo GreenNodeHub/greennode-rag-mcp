@@ -7,13 +7,13 @@ const config = { backendUrl: "x", transport: "stdio", port: 8080, tokenEnv: "T",
 
 describe("listKnowledgeBasesTool", () => {
   it("no engine: passthrough GET /knowledge-bases", async () => {
-    const backend: BackendClient = async (req) => { expect(req.path).toBe("/knowledge-bases"); expect(req.query).toMatchObject({ page: 1, size: 10 }); return { status: 200, body: { items: [{ id: "kb1", name: "k" }] } }; };
+    const backend: BackendClient = async (req) => { expect(req.path).toBe("/knowledge-bases"); expect(req.query).toMatchObject({ page: 1, size: 10 }); return { status: 200, body: { listData:[{ id: "kb1", name: "k" }] } }; };
     await listKnowledgeBasesTool({ config, backend }, { bearerToken: "t" }, {});
   });
   it("engine: filters to engine's KBs", async () => {
     const backend: BackendClient = async (req) => {
-      if (req.path === "/agents") return { status: 200, body: { items: [{ id: "ab-1", name: "eng", knowledgeBaseInfos: [{ id: "kb-2" }] }] } };
-      return { status: 200, body: { items: [{ id: "kb-1", name: "a" }, { id: "kb-2", name: "b" }] } };
+      if (req.path === "/agents") return { status: 200, body: { listData:[{ id: "ab-1", name: "eng", knowledgeBaseInfos: [{ id: "kb-2" }] }] } };
+      return { status: 200, body: { listData:[{ id: "kb-1", name: "a" }, { id: "kb-2", name: "b" }] } };
     };
     const res = await listKnowledgeBasesTool({ config, backend }, { bearerToken: "t", engine: "eng" }, {});
     expect(JSON.parse(res.content[0].text)).toEqual([{ id: "kb-2", name: "b" }]);

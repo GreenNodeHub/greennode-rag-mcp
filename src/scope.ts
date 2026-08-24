@@ -1,21 +1,12 @@
 import type { BackendClient } from "./http/downstream.js";
 import type { AuthContext } from "./auth/inbound.js";
 import { httpError, fail, type ToolResult } from "./util/result.js";
+import { itemsOf } from "./util/list.js";
 
 export type ScopeResult = { ok: true; kbIds: string[] } | { ok: false; result: ToolResult };
 
 export interface ScopeDeps {
   backend: BackendClient;
-}
-
-// ListResponse envelope field is assumed to be `items`; confirm during impl (spec §9).
-function itemsOf(body: unknown): any[] {
-  const b = body as any;
-  if (Array.isArray(b)) return b;
-  if (b && Array.isArray(b.items)) return b.items;
-  if (b && Array.isArray(b.content)) return b.content;
-  if (b && Array.isArray(b.data)) return b.data;
-  return [];
 }
 
 export async function resolveSearchScope(auth: AuthContext, deps: ScopeDeps): Promise<ScopeResult> {

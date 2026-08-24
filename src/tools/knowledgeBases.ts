@@ -5,15 +5,7 @@ import type { ToolResult } from "../util/result.js";
 import { ok, okList, httpError, fail } from "../util/result.js";
 import { resolveSearchScope } from "../scope.js";
 import { KbId } from "../schema/backend.js";
-
-function itemsOf(body: unknown): any[] {
-  const b = body as any;
-  if (Array.isArray(b)) return b;
-  if (b && Array.isArray(b.items)) return b.items;
-  if (b && Array.isArray(b.content)) return b.content;
-  if (b && Array.isArray(b.data)) return b.data;
-  return [];
-}
+import { itemsOf } from "../util/list.js";
 
 export const ListKnowledgeBasesInputSchema = {
   page: z.number().int().positive().optional(),

@@ -10,7 +10,7 @@ function backendReturning(res: { status: number; body: unknown }): { backend: Ba
 
 describe("resolveSearchScope", () => {
   it("engine: exact-matches name and returns its kbIds", async () => {
-    const { backend, calls } = backendReturning({ status: 200, body: { items: [
+    const { backend, calls } = backendReturning({ status: 200, body: { listData:[
       { id: "ab-1", name: "other", knowledgeBaseInfos: [{ id: "kb-x" }] },
       { id: "ab-2", name: "myengine", knowledgeBaseInfos: [{ id: "kb-a" }, { id: "kb-b" }] },
     ] } });
@@ -19,13 +19,13 @@ describe("resolveSearchScope", () => {
     expect(calls[0]).toMatchObject({ method: "GET", path: "/agents", query: { searchName: "myengine" } });
   });
   it("engine: not found -> fail result", async () => {
-    const { backend } = backendReturning({ status: 200, body: { items: [{ id: "ab-1", name: "other" }] } });
+    const { backend } = backendReturning({ status: 200, body: { listData:[{ id: "ab-1", name: "other" }] } });
     const r = await resolveSearchScope({ bearerToken: "t", engine: "nope" }, { backend });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.result.isError).toBe(true);
   });
   it("no engine: enumerates all KBs", async () => {
-    const { backend, calls } = backendReturning({ status: 200, body: { items: [{ id: "kb-1" }, { id: "kb-2" }] } });
+    const { backend, calls } = backendReturning({ status: 200, body: { listData:[{ id: "kb-1" }, { id: "kb-2" }] } });
     const r = await resolveSearchScope({ bearerToken: "t" }, { backend });
     expect(r).toEqual({ ok: true, kbIds: ["kb-1", "kb-2"] });
     expect(calls[0]).toMatchObject({ method: "GET", path: "/knowledge-bases", query: { page: 1, size: 100 } });

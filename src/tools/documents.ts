@@ -4,15 +4,7 @@ import type { AuthContext } from "../auth/inbound.js";
 import type { ToolResult } from "../util/result.js";
 import { ok, okList, fail, httpError } from "../util/result.js";
 import { KbId } from "../schema/backend.js";
-
-function itemsOf(body: unknown): any[] {
-  const b = body as any;
-  if (Array.isArray(b)) return b;
-  if (b && Array.isArray(b.items)) return b.items;
-  if (b && Array.isArray(b.content)) return b.content;
-  if (b && Array.isArray(b.data)) return b.data;
-  return [];
-}
+import { itemsOf } from "../util/list.js";
 
 export const ListDocumentsInputSchema = {
   kbId: KbId,

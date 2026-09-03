@@ -18,7 +18,7 @@ Connect a local MCP client (Claude Code, Cursor, Windsurf, …) to the server ov
 **Prerequisites**
 
 - Node.js ≥ 20 (see `package.json` `engines`)
-- The `agent-platform-api` gateway base URL (`BACKEND_URL`) and an OAuth bearer token valid against it
+- An OAuth bearer token valid against the platform. `BACKEND_URL` is optional — it defaults to prod.
 
 **1. Install** — from npm (no clone needed):
 
@@ -31,10 +31,11 @@ npm install -g @watermelonpm/greennode-rag-mcp
 **2. Run** (stdio is the default transport — no need to set `TRANSPORT`)
 
 ```bash
-BACKEND_URL=https://aiplatform.console-dev.vngcloud.tech/agent-api \
 GREENNODE_RAG_TOKEN=<your-token> \
 greennode-rag-mcp          # global install; or: npx -y @watermelonpm/greennode-rag-mcp
 ```
+
+Uses the **prod** backend by default. Set `BACKEND_URL=https://aiplatform.console-dev.vngcloud.tech/agent-api` to use dev.
 
 **3. Wire up your client.** Claude Code — `.mcp.json`:
 
@@ -45,13 +46,14 @@ greennode-rag-mcp          # global install; or: npx -y @watermelonpm/greennode-
       "command": "npx",
       "args": ["-y", "@watermelonpm/greennode-rag-mcp"],
       "env": {
-        "BACKEND_URL": "https://aiplatform.console-dev.vngcloud.tech/agent-api",
         "GREENNODE_RAG_TOKEN": "<your-token>"
       }
     }
   }
 }
 ```
+
+Add `"BACKEND_URL": "https://aiplatform.console-dev.vngcloud.tech/agent-api"` to `env` to use the dev environment; it defaults to prod.
 
 > **From source (development):** clone the repo, `npm ci`, then use `"args": ["tsx", "src/index.ts"]` with `"cwd": "<repo path>"` in the `.mcp.json` above, or `npm run dev`.
 
@@ -177,7 +179,7 @@ All config is via environment variables, read once at startup by `loadEnvConfig`
 
 | Var | Default | Notes |
 |---|---|---|
-| `BACKEND_URL` | — | **Required.** `agent-platform-api` gateway base URL. Dev: `https://aiplatform.console-dev.vngcloud.tech/agent-api`; prod: `https://aiplatform.console.greennode.ai/agent-api`. |
+| `BACKEND_URL` | `https://aiplatform.console.greennode.ai/agent-api` | `agent-platform-api` gateway base URL. Optional — defaults to **prod**. Set to `https://aiplatform.console-dev.vngcloud.tech/agent-api` for dev. |
 | `TRANSPORT` | `stdio` | `stdio` or `http`. Any other value throws at boot — the process exits non-zero, nothing listens. |
 | `GREENNODE_RAG_TOKEN` | — | Upstream OAuth bearer, **stdio only**. Forwarded to the gateway on every call. |
 | `TOKEN_ENV` | `GREENNODE_RAG_TOKEN` | Name of the env var that holds the token, **stdio only**. Set this to read the token from a differently-named var. |

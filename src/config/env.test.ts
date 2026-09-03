@@ -2,8 +2,9 @@ import { describe, it, expect } from "vitest";
 import { loadEnvConfig } from "./env.js";
 
 describe("loadEnvConfig", () => {
-  it("throws when BACKEND_URL is missing", () => {
-    expect(() => loadEnvConfig({})).toThrow(/BACKEND_URL is required/);
+  it("defaults BACKEND_URL to prod when missing", () => {
+    const cfg = loadEnvConfig({});
+    expect(cfg.backendUrl).toBe("https://aiplatform.console.greennode.ai/agent-api");
   });
   it("throws on invalid TRANSPORT", () => {
     expect(() => loadEnvConfig({ BACKEND_URL: "https://x", TRANSPORT: "ws" })).toThrow(/Invalid TRANSPORT/);

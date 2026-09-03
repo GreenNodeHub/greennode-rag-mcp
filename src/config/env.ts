@@ -1,3 +1,6 @@
+import type { LogLevel } from "../util/log.js";
+import { parseLogLevel } from "../util/log.js";
+
 export type Transport = "stdio" | "http";
 
 export interface EnvConfig {
@@ -8,6 +11,8 @@ export interface EnvConfig {
   maxResponseBytes: number;
   defaultPageSize: number;
   maxGetDocumentPages: number;
+  logLevel: LogLevel;
+  backendTimeoutMs: number;
 }
 
 export function loadEnvConfig(env: NodeJS.ProcessEnv): EnvConfig {
@@ -25,5 +30,7 @@ export function loadEnvConfig(env: NodeJS.ProcessEnv): EnvConfig {
     maxResponseBytes: Number(env.MAX_RESPONSE_BYTES ?? 25000),
     defaultPageSize: Number(env.DEFAULT_PAGE_SIZE ?? 10),
     maxGetDocumentPages: Number(env.MAX_GET_DOCUMENT_PAGES ?? 10),
+    logLevel: parseLogLevel(env.LOG_LEVEL),
+    backendTimeoutMs: Number(env.BACKEND_TIMEOUT_MS ?? 300000),
   };
 }

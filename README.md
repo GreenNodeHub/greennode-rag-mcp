@@ -113,6 +113,13 @@ search({ question: "how do I rotate a token?" })
 
 Ingest is async — `ingest_document` / `ingest_batch` return immediately; pair them with `get_ingest_status` to poll until `ACTIVE`.
 
+**How to upload a file** is spelled out in the tool description itself, and it differs by transport so the agent never has to guess:
+
+- **stdio** (server runs locally): read the file from disk → base64-encode → pass as `data` with `mimeType` (or `content` for plain text).
+- **streamable HTTP** (server is remote, can't read your disk): you must read and inline the file yourself. Check the size first — base64 is ~33% larger than the file. If it's large (roughly ≥ 50 KB), **stop and don't inline it**; tell the user to run the MCP locally over stdio instead.
+
+The `filename` / `content` / `data` / `mimeType` fields are documented inline in the tool's `inputSchema`.
+
 ## Transports: stdio vs. streamable HTTP
 
 | | stdio | streamable HTTP |
@@ -177,6 +184,8 @@ All config is via environment variables, read once at startup by `loadEnvConfig`
 | `MAX_RESPONSE_BYTES` | `25000` | Hard cap on list responses; over-cap responses are truncated with a notice. |
 | `DEFAULT_PAGE_SIZE` | `10` | Default `size` for `list_documents` / `list_knowledge_bases`. |
 | `MAX_GET_DOCUMENT_PAGES` | `10` | Max pages `get_document` will scan before giving up. |
+| `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error`. Logs go to **stderr** — never stdout, so stdio JSON-RPC is never corrupted. `debug` adds per-call backend traces. |
+| `BACKEND_TIMEOUT_MS` | `300000` | Hard timeout (ms) for each backend call (search, list, upload, …). On timeout the tool returns a `504`-style error instead of hanging forever. `0` disables. |
 
 > In **streamable HTTP** mode the token and engine are not read from env at all — clients supply them per request via `Authorization: Bearer` and `X-Engine`. `GREENNODE_RAG_TOKEN` / `TOKEN_ENV` / `ENGINE` apply only to stdio.
 
@@ -186,10 +195,13 @@ All config is via environment variables, read once at startup by `loadEnvConfig`
 
 | Script | What it does |
 |---|---|
-| `npm start` | Run the server (`tsx src/index.ts`) |
-| `npm run dev` | Run with reload (`tsx watch src/index.ts`) |
-| `npm run build` | Typecheck only (`tsc --noEmit`). There is no compiled `dist/` — the runnable form is `tsx`. |
+| `npm start` | Run the compiled server (`node dist/index.js`) — run `npm run compile` first |
+| `npm run dev` | Run from source with reload (`tsx watch src/index.ts`) |
+| `npm run build` | Typecheck only (`tsc --noEmit`) |
+| `npm run compile` | Compile to `dist/` (`tsc -p tsconfig.build.json`); the published form runs via `node dist/index.js` / `npx greennode-rag-mcp` |
 | `npm test` / `npm run test:watch` | Vitest |
+
+**Logs & timeouts.** Every backend call logs `backend →` (method, path, url, body size, timeout) on start and `backend ←` (status, ms, bytes) on completion to **stderr** — so a hang shows up as a `backend →` with no matching `backend ←`. `ingest_document` / `ingest_batch` also log `ingest start` (kbId, per-file filename/mimeType/size) and `ingest done` / `ingest failed`. Set `LOG_LEVEL=debug` for more detail. `BACKEND_TIMEOUT_MS` (default 300000 ms) bounds every upstream call; on timeout the tool returns a `504`-style error instead of hanging. For a deployed HTTP server, stderr is wherever the runtime collects it (e.g. `docker logs`).
 
 **Docker:**
 

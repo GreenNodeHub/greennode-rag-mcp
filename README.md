@@ -20,20 +20,20 @@ Connect a local MCP client (Claude Code, Cursor, Windsurf, …) to the server ov
 - Node.js ≥ 20 (see `package.json` `engines`)
 - The `agent-platform-api` gateway base URL (`BACKEND_URL`) and an OAuth bearer token valid against it
 
-**1. Install**
+**1. Install** — from npm (no clone needed):
 
 ```bash
-git clone https://github.com/GreenNodeHub/greennode-rag-mcp.git
-cd greennode-rag-mcp
-npm ci
+npm install -g @watermelonpm/greennode-rag-mcp
 ```
+
+…or run one-off with `npx -y @watermelonpm/greennode-rag-mcp`.
 
 **2. Run** (stdio is the default transport — no need to set `TRANSPORT`)
 
 ```bash
 BACKEND_URL=https://aiplatform.console-dev.vngcloud.tech/agent-api \
 GREENNODE_RAG_TOKEN=<your-token> \
-npm start
+greennode-rag-mcp          # global install; or: npx -y @watermelonpm/greennode-rag-mcp
 ```
 
 **3. Wire up your client.** Claude Code — `.mcp.json`:
@@ -43,7 +43,7 @@ npm start
   "mcpServers": {
     "greennode-rag": {
       "command": "npx",
-      "args": ["tsx", "src/index.ts"],
+      "args": ["-y", "@watermelonpm/greennode-rag-mcp"],
       "env": {
         "BACKEND_URL": "https://aiplatform.console-dev.vngcloud.tech/agent-api",
         "GREENNODE_RAG_TOKEN": "<your-token>"
@@ -52,6 +52,8 @@ npm start
   }
 }
 ```
+
+> **From source (development):** clone the repo, `npm ci`, then use `"args": ["tsx", "src/index.ts"]` with `"cwd": "<repo path>"` in the `.mcp.json` above, or `npm run dev`.
 
 Add `"ENGINE": "<agent name>"` to `env` to scope `search` and `list_knowledge_bases` to that engine's attached knowledge bases; omit it to use every KB in the account. For Cursor, Windsurf, Cline, Roo Code, Claude Desktop, and other clients, use the same command + env under each client's own config key.
 

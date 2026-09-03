@@ -1,5 +1,5 @@
 {
-  "name": "greennode-rag-mcp",
+  "name": "@watermelonpm/greennode-rag-mcp",
   "version": "0.1.0",
   "description": "MCP server exposing GreenNode RAG APIs (knowledge bases, documents, search, ingest) over stdio or streamable HTTP.",
   "license": "Apache-2.0",
@@ -20,6 +20,7 @@
     "greennode-rag-mcp": "bin/greennode-rag-mcp.js"
   },
   "files": ["dist", "bin", "README.md", ".env.example"],
+  "publishConfig": { "access": "public" },
   "scripts": {
     "build": "tsc --noEmit",
     "compile": "tsc -p tsconfig.build.json",

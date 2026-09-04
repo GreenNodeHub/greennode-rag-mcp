@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, rm, mkdir, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ingestFileTool, ingestFilesTool } from "./ingestFile.js";
@@ -90,6 +90,28 @@ describe("ingestFileTool", () => {
     const res = await ingestFileTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1", path });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toMatch(/HTTP 400/);
+  });
+
+  it("fails when the path is a directory", async () => {
+    const dirPath = join(dir, "subdir.txt");
+    await mkdir(dirPath);
+    const backend: BackendClient = async () => ({ status: 200, body: {} });
+    const res = await ingestFileTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1", path: dirPath });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/not a file/);
+  });
+
+  it("rejects a symlink that escapes allowedRoots", async () => {
+    const outside = await write("outside.txt", "secret");
+    const linkDir = join(dir, "links");
+    await mkdir(linkDir);
+    const link = join(linkDir, "link.txt");
+    await symlink(outside, link);
+    const cfg = { ...config, allowedRoots: [linkDir] } as EnvConfig;
+    const backend: BackendClient = async () => ({ status: 200, body: {} });
+    const res = await ingestFileTool({ config: cfg, backend }, { bearerToken: "t" }, { kbId: "kb1", path: link });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/outside allowed roots/);
   });
 });
 

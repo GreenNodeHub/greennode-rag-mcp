@@ -40,7 +40,7 @@ export function loadEnvConfig(env: NodeJS.ProcessEnv): EnvConfig {
   }
   const allowedExtensions = env.INGEST_ALLOWED_EXTENSIONS
     ? parseList(env.INGEST_ALLOWED_EXTENSIONS).map((s) => s.toLowerCase())
-    : DEFAULT_ALLOWED_EXTENSIONS;
+    : [...DEFAULT_ALLOWED_EXTENSIONS];
   const allowedRoots = parseList(env.INGEST_ALLOWED_ROOTS);
   return {
     backendUrl,

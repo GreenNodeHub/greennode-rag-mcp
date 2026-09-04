@@ -11,7 +11,7 @@ describe("loadEnvConfig", () => {
   });
   it("applies defaults", () => {
     const cfg = loadEnvConfig({ BACKEND_URL: "https://x" });
-    expect(cfg).toMatchObject({ backendUrl: "https://x", transport: "stdio", port: 8080, tokenEnv: "GREENNODE_RAG_TOKEN", maxResponseBytes: 25000, defaultPageSize: 10, maxGetDocumentPages: 10, logLevel: "info", backendTimeoutMs: 300000 });
+    expect(cfg).toMatchObject({ backendUrl: "https://x", transport: "stdio", port: 8080, tokenEnv: "GREENNODE_RAG_TOKEN", maxResponseBytes: 25000, defaultPageSize: 10, maxGetDocumentPages: 10, logLevel: "info", backendTimeoutMs: 300000, maxIngestFileBytes: 104_857_600, allowedRoots: [] });
   });
   it("parses LOG_LEVEL and BACKEND_TIMEOUT_MS (0 disables)", () => {
     const cfg = loadEnvConfig({ BACKEND_URL: "https://x", LOG_LEVEL: "debug", BACKEND_TIMEOUT_MS: "0" });
@@ -21,5 +21,25 @@ describe("loadEnvConfig", () => {
   it("falls back to info for unknown LOG_LEVEL", () => {
     const cfg = loadEnvConfig({ BACKEND_URL: "https://x", LOG_LEVEL: "verbose" });
     expect(cfg.logLevel).toBe("info");
+  });
+  it("defaults ingest-from-disk config", () => {
+    const cfg = loadEnvConfig({ BACKEND_URL: "https://x" });
+    expect(cfg.maxIngestFileBytes).toBe(104_857_600);
+    expect(cfg.allowedExtensions).toEqual([
+      "pdf", "txt", "md", "markdown", "docx", "doc", "json", "csv", "html", "htm",
+      "pptx", "ppt", "xlsx", "xls", "png", "jpg", "jpeg", "gif", "webp", "rtf", "zip",
+    ]);
+    expect(cfg.allowedRoots).toEqual([]);
+  });
+  it("parses ingest-from-disk env vars", () => {
+    const cfg = loadEnvConfig({
+      BACKEND_URL: "https://x",
+      MAX_INGEST_FILE_BYTES: "1000",
+      INGEST_ALLOWED_EXTENSIONS: "PDF, txt ,JSON",
+      INGEST_ALLOWED_ROOTS: "/a, /b",
+    });
+    expect(cfg.maxIngestFileBytes).toBe(1000);
+    expect(cfg.allowedExtensions).toEqual(["pdf", "txt", "json"]);
+    expect(cfg.allowedRoots).toEqual(["/a", "/b"]);
   });
 });

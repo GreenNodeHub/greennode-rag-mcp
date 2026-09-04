@@ -1,15 +1,34 @@
 {
-  "name": "greennode-rag-mcp",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@watermelonpm/greennode-rag-mcp",
+  "version": "0.1.1",
+  "description": "MCP server exposing GreenNode RAG APIs (knowledge bases, documents, search, ingest) over stdio or streamable HTTP.",
+  "license": "Apache-2.0",
+  "author": "GreenNodeHub",
+  "homepage": "https://github.com/GreenNodeHub/greennode-rag-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GreenNodeHub/greennode-rag-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/GreenNodeHub/greennode-rag-mcp/issues"
+  },
+  "keywords": ["mcp", "rag", "greennode", "knowledge-base", "model-context-protocol"],
   "type": "module",
   "engines": { "node": ">=20" },
+  "main": "dist/index.js",
+  "bin": {
+    "greennode-rag-mcp": "bin/greennode-rag-mcp.js"
+  },
+  "files": ["dist", "bin", "README.md", ".env.example"],
+  "publishConfig": { "access": "public" },
   "scripts": {
     "build": "tsc --noEmit",
+    "compile": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts"
+    "start": "node dist/index.js",
+    "prepack": "npm run compile"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",

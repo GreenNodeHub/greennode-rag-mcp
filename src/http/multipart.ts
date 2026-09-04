@@ -19,3 +19,13 @@ export function toFormData(documents: IngestDocumentInput[]): FormData {
   }
   return form;
 }
+
+export function filesToFormData(files: { body: Buffer; filename: string; mimeType?: string }[]): FormData {
+  const form = new FormData();
+  for (const f of files) {
+    const bytes = Buffer.from(f.body);
+    const blob = new Blob([bytes], { type: f.mimeType ?? "application/octet-stream" });
+    form.append("files", blob, f.filename);
+  }
+  return form;
+}

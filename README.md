@@ -1,6 +1,6 @@
 # greennode-rag-mcp
 
-An MCP server that exposes the GreenNode RAG REST APIs (knowledge bases, documents, search, ingest) as **11 tools**. It proxies `agent-platform-api` via its public gateway with pass-through OAuth bearer auth and optional `engine` (agent name) scoping. Runs locally over **stdio** (default) or remotely over **streamable HTTP**, with any MCP-speaking client.
+An MCP server that exposes the GreenNode RAG REST APIs (knowledge bases, documents, search, ingest) as **13 tools**. It proxies `agent-platform-api` via its public gateway with pass-through OAuth bearer auth and optional `engine` (agent name) scoping. Runs locally over **stdio** (default) or remotely over **streamable HTTP**, with any MCP-speaking client.
 
 ## Table of contents
 
@@ -18,23 +18,24 @@ Connect a local MCP client (Claude Code, Cursor, Windsurf, …) to the server ov
 **Prerequisites**
 
 - Node.js ≥ 20 (see `package.json` `engines`)
-- The `agent-platform-api` gateway base URL (`BACKEND_URL`) and an OAuth bearer token valid against it
+- An OAuth bearer token valid against the platform. `BACKEND_URL` is optional — it defaults to prod.
 
-**1. Install**
+**1. Install** — from npm (no clone needed):
 
 ```bash
-git clone https://github.com/GreenNodeHub/greennode-rag-mcp.git
-cd greennode-rag-mcp
-npm ci
+npm install -g @watermelonpm/greennode-rag-mcp
 ```
+
+…or run one-off with `npx -y @watermelonpm/greennode-rag-mcp`.
 
 **2. Run** (stdio is the default transport — no need to set `TRANSPORT`)
 
 ```bash
-BACKEND_URL=https://aiplatform.console-dev.vngcloud.tech/agent-api \
 GREENNODE_RAG_TOKEN=<your-token> \
-npm start
+greennode-rag-mcp          # global install; or: npx -y @watermelonpm/greennode-rag-mcp
 ```
+
+Uses the **prod** backend by default. Set `BACKEND_URL=https://aiplatform.console-dev.vngcloud.tech/agent-api` to use dev.
 
 **3. Wire up your client.** Claude Code — `.mcp.json`:
 
@@ -43,9 +44,8 @@ npm start
   "mcpServers": {
     "greennode-rag": {
       "command": "npx",
-      "args": ["tsx", "src/index.ts"],
+      "args": ["-y", "@watermelonpm/greennode-rag-mcp"],
       "env": {
-        "BACKEND_URL": "https://aiplatform.console-dev.vngcloud.tech/agent-api",
         "GREENNODE_RAG_TOKEN": "<your-token>"
       }
     }
@@ -53,13 +53,17 @@ npm start
 }
 ```
 
+Add `"BACKEND_URL": "https://aiplatform.console-dev.vngcloud.tech/agent-api"` to `env` to use the dev environment; it defaults to prod.
+
+> **From source (development):** clone the repo, `npm ci`, then use `"args": ["tsx", "src/index.ts"]` with `"cwd": "<repo path>"` in the `.mcp.json` above, or `npm run dev`.
+
 Add `"ENGINE": "<agent name>"` to `env` to scope `search` and `list_knowledge_bases` to that engine's attached knowledge bases; omit it to use every KB in the account. For Cursor, Windsurf, Cline, Roo Code, Claude Desktop, and other clients, use the same command + env under each client's own config key.
 
 **First call flow:** `list_knowledge_bases` → `list_documents` → `search` (see [How it works](#how-it-works)).
 
 ## How it works
 
-The server exposes 11 tools that map onto the `agent-platform-api` RAG endpoints. Auth is pass-through: the MCP server forwards the caller's OAuth bearer to the gateway and never handles `portal-user-id` — the gateway validates the token and injects ownership. When an `engine` (agent name) is set, the server resolves it to KB ids via `GET /agents?searchName=` and scopes `search` / `list_knowledge_bases` to those KBs.
+The server exposes 13 tools that map onto the `agent-platform-api` RAG endpoints. Auth is pass-through: the MCP server forwards the caller's OAuth bearer to the gateway and never handles `portal-user-id` — the gateway validates the token and injects ownership. When an `engine` (agent name) is set, the server resolves it to KB ids via `GET /agents?searchName=` and scopes `search` / `list_knowledge_bases` to those KBs.
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
@@ -69,7 +73,7 @@ The server exposes 11 tools that map onto the `agent-platform-api` RAG endpoints
                           ▼
 ┌───────────────────────────────────────────────────────────────┐
 │  greennode-rag-mcp  (hand-written TypeScript)                 │
-│    • 11 tools: search, ingest_*, documents, knowledge_bases   │
+│    • 13 tools: search, ingest_*, documents, knowledge_bases   │
 │    • inbound auth: env token (stdio) / Authorization header   │
 │    • engine scoping: ENGINE env / X-Engine header → KB ids    │
 │    • list-response truncation (MAX_RESPONSE_BYTES)            │
@@ -81,13 +85,15 @@ The server exposes 11 tools that map onto the `agent-platform-api` RAG endpoints
 └───────────────────────────────────────────────────────────────┘
 ```
 
-### Tools (11)
+### Tools (13)
 
 | Tool | Key args | Notes |
 |---|---|---|
 | `search` | `question`, `filters?` | Semantic search over in-scope KB(s); returns chunks `{content, documentId, similarity}` |
 | `ingest_document` | `kbId`, `filename`, `content` ∣ `data` (base64), `mimeType?` | One file; async — poll `get_ingest_status` |
 | `ingest_batch` | `kbId`, `documents[]` | Multiple files in one call |
+| `ingest_file` | `kbId`, `path`, `filename?`, `mimeType?` | Read one local file by path → multipart (no base64); stdio local |
+| `ingest_files` | `kbId`, `files[]` | Multiple files by path in one call |
 | `get_ingest_status` | `kbId`, `documentId?` | Poll KB + document ingest status |
 | `list_documents` | `kbId`, `page?`, `size?` | Paginated |
 | `get_document` | `kbId`, `documentId`, `maxPages?` | Lists client-side; bounded by `maxPages` |
@@ -112,6 +118,14 @@ search({ question: "how do I rotate a token?" })
 ```
 
 Ingest is async — `ingest_document` / `ingest_batch` return immediately; pair them with `get_ingest_status` to poll until `ACTIVE`.
+
+**How to upload a file** is spelled out in the tool description itself, and it differs by transport so the agent never has to guess:
+
+- **stdio, path-based (preferred for local files)**: call `ingest_file({ kbId, path })` — the server reads the file from disk and uploads it as multipart. No base64, no inlining; works for large files up to `MAX_INGEST_FILE_BYTES`.
+- **stdio, inline**: read the file from disk → base64-encode → pass as `data` with `mimeType` (or `content` for plain text).
+- **streamable HTTP** (server is remote, can't read your disk): you must read and inline the file yourself. Check the size first — base64 is ~33% larger than the file. If it's large (roughly ≥ 50 KB), **stop and don't inline it**; tell the user to run the MCP locally over stdio instead.
+
+The `filename` / `content` / `data` / `mimeType` fields are documented inline in the tool's `inputSchema`.
 
 ## Transports: stdio vs. streamable HTTP
 
@@ -143,7 +157,7 @@ For a deployed runtime or remote clients. Each `POST /mcp` builds a fresh server
 
 ```bash
 TRANSPORT=http \
-BACKEND_URL=https://aiplatform.console.greennode.ai/agent-api \
+BACKEND_URL=https://agent-rag.api.vngcloud.vn \
 npm start                     # listens on :8080 (PORT); pass the token per request, not via env
 ```
 
@@ -168,7 +182,7 @@ All config is via environment variables, read once at startup by `loadEnvConfig`
 
 | Var | Default | Notes |
 |---|---|---|
-| `BACKEND_URL` | — | **Required.** `agent-platform-api` gateway base URL. Dev: `https://aiplatform.console-dev.vngcloud.tech/agent-api`; prod: `https://aiplatform.console.greennode.ai/agent-api`. |
+| `BACKEND_URL` | `https://agent-rag.api.vngcloud.vn` | Backend base URL. Optional — defaults to **prod**. Set to `https://aiplatform.console-dev.vngcloud.tech/agent-api` for dev. |
 | `TRANSPORT` | `stdio` | `stdio` or `http`. Any other value throws at boot — the process exits non-zero, nothing listens. |
 | `GREENNODE_RAG_TOKEN` | — | Upstream OAuth bearer, **stdio only**. Forwarded to the gateway on every call. |
 | `TOKEN_ENV` | `GREENNODE_RAG_TOKEN` | Name of the env var that holds the token, **stdio only**. Set this to read the token from a differently-named var. |
@@ -177,6 +191,8 @@ All config is via environment variables, read once at startup by `loadEnvConfig`
 | `MAX_RESPONSE_BYTES` | `25000` | Hard cap on list responses; over-cap responses are truncated with a notice. |
 | `DEFAULT_PAGE_SIZE` | `10` | Default `size` for `list_documents` / `list_knowledge_bases`. |
 | `MAX_GET_DOCUMENT_PAGES` | `10` | Max pages `get_document` will scan before giving up. |
+| `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error`. Logs go to **stderr** — never stdout, so stdio JSON-RPC is never corrupted. `debug` adds per-call backend traces. |
+| `BACKEND_TIMEOUT_MS` | `300000` | Hard timeout (ms) for each backend call (search, list, upload, …). On timeout the tool returns a `504`-style error instead of hanging forever. `0` disables. |
 
 > In **streamable HTTP** mode the token and engine are not read from env at all — clients supply them per request via `Authorization: Bearer` and `X-Engine`. `GREENNODE_RAG_TOKEN` / `TOKEN_ENV` / `ENGINE` apply only to stdio.
 
@@ -186,10 +202,13 @@ All config is via environment variables, read once at startup by `loadEnvConfig`
 
 | Script | What it does |
 |---|---|
-| `npm start` | Run the server (`tsx src/index.ts`) |
-| `npm run dev` | Run with reload (`tsx watch src/index.ts`) |
-| `npm run build` | Typecheck only (`tsc --noEmit`). There is no compiled `dist/` — the runnable form is `tsx`. |
+| `npm start` | Run the compiled server (`node dist/index.js`) — run `npm run compile` first |
+| `npm run dev` | Run from source with reload (`tsx watch src/index.ts`) |
+| `npm run build` | Typecheck only (`tsc --noEmit`) |
+| `npm run compile` | Compile to `dist/` (`tsc -p tsconfig.build.json`); the published form runs via `node dist/index.js` / `npx greennode-rag-mcp` |
 | `npm test` / `npm run test:watch` | Vitest |
+
+**Logs & timeouts.** Every backend call logs `backend →` (method, path, url, body size, timeout) on start and `backend ←` (status, ms, bytes) on completion to **stderr** — so a hang shows up as a `backend →` with no matching `backend ←`. `ingest_document` / `ingest_batch` also log `ingest start` (kbId, per-file filename/mimeType/size) and `ingest done` / `ingest failed`. Set `LOG_LEVEL=debug` for more detail. `BACKEND_TIMEOUT_MS` (default 300000 ms) bounds every upstream call; on timeout the tool returns a `504`-style error instead of hanging. For a deployed HTTP server, stderr is wherever the runtime collects it (e.g. `docker logs`).
 
 **Docker:**
 

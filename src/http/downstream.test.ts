@@ -35,4 +35,21 @@ describe("createBackendClient", () => {
     expect(calls[0].init.body).toBe(form);
     expect(calls[0].init.headers["Content-Type"]).toBeUndefined();
   });
+  it("returns 504 when the upstream stalls past timeoutMs", async () => {
+    // fetchImpl respects init.signal: never resolves on its own, rejects when aborted
+    const fetchImpl = (_url: string, init: any) => new Promise((_resolve, reject) => {
+      init.signal.addEventListener("abort", () => reject(new Error("aborted")));
+    });
+    const backend = createBackendClient("https://x", fetchImpl as any, 50);
+    const res = await backend({ method: "POST", path: "/k", body: { a: 1 }, bearerToken: "t" });
+    expect(res.status).toBe(504);
+    expect(res.body).toMatchObject({ error: /timed out after 50ms/, path: "/k" });
+  });
+  it("returns 502 on a non-timeout fetch error", async () => {
+    const fetchImpl = async () => { throw new Error("ECONNREFUSED"); };
+    const backend = createBackendClient("https://x", fetchImpl as any, 5000);
+    const res = await backend({ method: "GET", path: "/k", bearerToken: "t" });
+    expect(res.status).toBe(502);
+    expect(res.body).toMatchObject({ error: "ECONNREFUSED" });
+  });
 });

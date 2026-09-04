@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toFormData } from "./multipart.js";
+import { toFormData, filesToFormData } from "./multipart.js";
 
 describe("toFormData", () => {
   it("appends a text part under 'files'", () => {
@@ -17,5 +17,22 @@ describe("toFormData", () => {
   it("throws if neither or both of content/data", () => {
     expect(() => toFormData([{ filename: "a.txt" }])).toThrow(/exactly one/);
     expect(() => toFormData([{ filename: "a.txt", content: "c", data: "D" }])).toThrow(/exactly one/);
+  });
+});
+
+describe("filesToFormData", () => {
+  it("appends buffers as binary parts under 'files'", async () => {
+    const form = filesToFormData([
+      { body: Buffer.from("hello", "utf8"), filename: "a.txt", mimeType: "text/plain" },
+      { body: Buffer.from([0x89, 0x50, 0x4e, 0x47]), filename: "b.png" },
+    ]);
+    const parts = form.getAll("files") as File[];
+    expect(parts).toHaveLength(2);
+    expect(parts[0].name).toBe("a.txt");
+    expect(parts[0].type).toBe("text/plain");
+    expect(await parts[0].text()).toBe("hello");
+    expect(parts[1].name).toBe("b.png");
+    expect(parts[1].type).toBe("application/octet-stream");
+    expect(Array.from(new Uint8Array(await parts[1].arrayBuffer()))).toEqual([0x89, 0x50, 0x4e, 0x47]);
   });
 });

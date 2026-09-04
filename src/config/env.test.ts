@@ -4,7 +4,7 @@ import { loadEnvConfig } from "./env.js";
 describe("loadEnvConfig", () => {
   it("defaults BACKEND_URL to prod when missing", () => {
     const cfg = loadEnvConfig({});
-    expect(cfg.backendUrl).toBe("https://aiplatform.console.greennode.ai/agent-api");
+    expect(cfg.backendUrl).toBe("https://agent-rag.api.vngcloud.vn");
   });
   it("throws on invalid TRANSPORT", () => {
     expect(() => loadEnvConfig({ BACKEND_URL: "https://x", TRANSPORT: "ws" })).toThrow(/Invalid TRANSPORT/);

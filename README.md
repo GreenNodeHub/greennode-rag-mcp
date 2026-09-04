@@ -154,7 +154,7 @@ For a deployed runtime or remote clients. Each `POST /mcp` builds a fresh server
 
 ```bash
 TRANSPORT=http \
-BACKEND_URL=https://aiplatform.console.greennode.ai/agent-api \
+BACKEND_URL=https://agent-rag.api.vngcloud.vn \
 npm start                     # listens on :8080 (PORT); pass the token per request, not via env
 ```
 
@@ -179,7 +179,7 @@ All config is via environment variables, read once at startup by `loadEnvConfig`
 
 | Var | Default | Notes |
 |---|---|---|
-| `BACKEND_URL` | `https://aiplatform.console.greennode.ai/agent-api` | `agent-platform-api` gateway base URL. Optional — defaults to **prod**. Set to `https://aiplatform.console-dev.vngcloud.tech/agent-api` for dev. |
+| `BACKEND_URL` | `https://agent-rag.api.vngcloud.vn` | Backend base URL. Optional — defaults to **prod**. Set to `https://aiplatform.console-dev.vngcloud.tech/agent-api` for dev. |
 | `TRANSPORT` | `stdio` | `stdio` or `http`. Any other value throws at boot — the process exits non-zero, nothing listens. |
 | `GREENNODE_RAG_TOKEN` | — | Upstream OAuth bearer, **stdio only**. Forwarded to the gateway on every call. |
 | `TOKEN_ENV` | `GREENNODE_RAG_TOKEN` | Name of the env var that holds the token, **stdio only**. Set this to read the token from a differently-named var. |

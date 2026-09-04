@@ -1,6 +1,6 @@
 # greennode-rag-mcp
 
-An MCP server that exposes the GreenNode RAG REST APIs (knowledge bases, documents, search, ingest) as **11 tools**. It proxies `agent-platform-api` via its public gateway with pass-through OAuth bearer auth and optional `engine` (agent name) scoping. Runs locally over **stdio** (default) or remotely over **streamable HTTP**, with any MCP-speaking client.
+An MCP server that exposes the GreenNode RAG REST APIs (knowledge bases, documents, search, ingest) as **13 tools**. It proxies `agent-platform-api` via its public gateway with pass-through OAuth bearer auth and optional `engine` (agent name) scoping. Runs locally over **stdio** (default) or remotely over **streamable HTTP**, with any MCP-speaking client.
 
 ## Table of contents
 
@@ -63,7 +63,7 @@ Add `"ENGINE": "<agent name>"` to `env` to scope `search` and `list_knowledge_ba
 
 ## How it works
 
-The server exposes 11 tools that map onto the `agent-platform-api` RAG endpoints. Auth is pass-through: the MCP server forwards the caller's OAuth bearer to the gateway and never handles `portal-user-id` — the gateway validates the token and injects ownership. When an `engine` (agent name) is set, the server resolves it to KB ids via `GET /agents?searchName=` and scopes `search` / `list_knowledge_bases` to those KBs.
+The server exposes 13 tools that map onto the `agent-platform-api` RAG endpoints. Auth is pass-through: the MCP server forwards the caller's OAuth bearer to the gateway and never handles `portal-user-id` — the gateway validates the token and injects ownership. When an `engine` (agent name) is set, the server resolves it to KB ids via `GET /agents?searchName=` and scopes `search` / `list_knowledge_bases` to those KBs.
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
@@ -73,7 +73,7 @@ The server exposes 11 tools that map onto the `agent-platform-api` RAG endpoints
                           ▼
 ┌───────────────────────────────────────────────────────────────┐
 │  greennode-rag-mcp  (hand-written TypeScript)                 │
-│    • 11 tools: search, ingest_*, documents, knowledge_bases   │
+│    • 13 tools: search, ingest_*, documents, knowledge_bases   │
 │    • inbound auth: env token (stdio) / Authorization header   │
 │    • engine scoping: ENGINE env / X-Engine header → KB ids    │
 │    • list-response truncation (MAX_RESPONSE_BYTES)            │
@@ -85,13 +85,15 @@ The server exposes 11 tools that map onto the `agent-platform-api` RAG endpoints
 └───────────────────────────────────────────────────────────────┘
 ```
 
-### Tools (11)
+### Tools (13)
 
 | Tool | Key args | Notes |
 |---|---|---|
 | `search` | `question`, `filters?` | Semantic search over in-scope KB(s); returns chunks `{content, documentId, similarity}` |
 | `ingest_document` | `kbId`, `filename`, `content` ∣ `data` (base64), `mimeType?` | One file; async — poll `get_ingest_status` |
 | `ingest_batch` | `kbId`, `documents[]` | Multiple files in one call |
+| `ingest_file` | `kbId`, `path`, `filename?`, `mimeType?` | Read one local file by path → multipart (no base64); stdio local |
+| `ingest_files` | `kbId`, `files[]` | Multiple files by path in one call |
 | `get_ingest_status` | `kbId`, `documentId?` | Poll KB + document ingest status |
 | `list_documents` | `kbId`, `page?`, `size?` | Paginated |
 | `get_document` | `kbId`, `documentId`, `maxPages?` | Lists client-side; bounded by `maxPages` |
@@ -119,7 +121,8 @@ Ingest is async — `ingest_document` / `ingest_batch` return immediately; pair 
 
 **How to upload a file** is spelled out in the tool description itself, and it differs by transport so the agent never has to guess:
 
-- **stdio** (server runs locally): read the file from disk → base64-encode → pass as `data` with `mimeType` (or `content` for plain text).
+- **stdio, path-based (preferred for local files)**: call `ingest_file({ kbId, path })` — the server reads the file from disk and uploads it as multipart. No base64, no inlining; works for large files up to `MAX_INGEST_FILE_BYTES`.
+- **stdio, inline**: read the file from disk → base64-encode → pass as `data` with `mimeType` (or `content` for plain text).
 - **streamable HTTP** (server is remote, can't read your disk): you must read and inline the file yourself. Check the size first — base64 is ~33% larger than the file. If it's large (roughly ≥ 50 KB), **stop and don't inline it**; tell the user to run the MCP locally over stdio instead.
 
 The `filename` / `content` / `data` / `mimeType` fields are documented inline in the tool's `inputSchema`.

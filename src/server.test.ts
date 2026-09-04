@@ -23,11 +23,11 @@ async function toolNames(cfg: EnvConfig): Promise<Record<string, string>> {
 }
 
 describe("createMcpServer", () => {
-  it("exposes exactly 11 tools", async () => {
+  it("exposes exactly 13 tools", async () => {
     const byName = await toolNames(config);
     expect(Object.keys(byName).sort()).toEqual([
       "create_knowledge_base", "delete_document", "delete_knowledge_base", "get_document", "get_ingest_status", "get_knowledge_base",
-      "ingest_batch", "ingest_document", "list_documents", "list_knowledge_bases", "search",
+      "ingest_batch", "ingest_document", "ingest_file", "ingest_files", "list_documents", "list_knowledge_bases", "search",
     ]);
   });
 

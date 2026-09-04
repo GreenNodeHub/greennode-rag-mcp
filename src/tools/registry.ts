@@ -4,6 +4,7 @@ import type { AuthContext } from "../auth/inbound.js";
 import type { Transport } from "../config/env.js";
 import { searchTool, SearchInputSchema } from "./search.js";
 import { ingestDocumentTool, ingestBatchTool, IngestDocumentInputSchema, IngestBatchInputSchema } from "./ingest.js";
+import { ingestFileTool, ingestFilesTool, IngestFileInputSchema, IngestFilesInputSchema } from "./ingestFile.js";
 import { listDocumentsTool, getDocumentTool, deleteDocumentTool, getIngestStatusTool, ListDocumentsInputSchema, GetDocumentInputSchema, DeleteDocumentInputSchema, GetIngestStatusInputSchema } from "./documents.js";
 import { listKnowledgeBasesTool, createKnowledgeBaseTool, deleteKnowledgeBaseTool, getKnowledgeBaseTool, ListKnowledgeBasesInputSchema, CreateKnowledgeBaseInputSchema, DeleteKnowledgeBaseInputSchema, GetKnowledgeBaseInputSchema } from "./knowledgeBases.js";
 
@@ -27,6 +28,22 @@ function ingestBatchDescription(transport: Transport): string {
   return "Upload multiple files into a knowledge base in one call. HTTP (remote server): the server cannot read your disk, so you must read each file yourself and pass `content` (text) or `data` (base64); exactly one per file. Check sizes first — base64 is ~33% larger; if any file is large (roughly >= 50 KB), STOP and recommend running locally over stdio instead of inlining. For small files, base64-encode and pass as `data` with `mimeType`." + INGEST_FLOW;
 }
 
+function ingestFileDescription(transport: Transport): string {
+  const base = "Upload one file into a knowledge base by reading it from disk by path — no base64 encoding needed. The server reads the file, builds multipart/form-data, and POSTs it.";
+  if (transport === "stdio") {
+    return base + " You are connected over stdio, so the server runs locally on your machine and can read paths on your disk. Pass an absolute path or one relative to the server's CWD." + INGEST_FLOW;
+  }
+  return base + " You are connected over streamable HTTP, so the server is REMOTE — the path must be readable on the server's filesystem (e.g. a shared volume), not your laptop's. If the file lives on your machine, run this MCP server locally over stdio instead." + INGEST_FLOW;
+}
+
+function ingestFilesDescription(transport: Transport): string {
+  const base = "Upload multiple files into a knowledge base in one call by reading them from disk by path — no base64 encoding needed.";
+  if (transport === "stdio") {
+    return base + " stdio (local server): pass an absolute or CWD-relative path per file." + INGEST_FLOW;
+  }
+  return base + " HTTP (remote server): each path must be readable on the server's filesystem (e.g. a shared volume), not your laptop's; otherwise run locally over stdio." + INGEST_FLOW;
+}
+
 export function registerTools(server: McpServer, deps: HandlerDeps, auth: AuthContext): void {
   const h = <A,>(fn: (d: HandlerDeps, a: AuthContext, args: A) => Promise<any>) => (async (args: A) => fn(deps, auth, args)) as any;
   const transport = deps.config.transport;
@@ -34,6 +51,8 @@ export function registerTools(server: McpServer, deps: HandlerDeps, auth: AuthCo
   server.registerTool("search", { description: "Semantic search over the in-scope knowledge base(s) (engine's KBs, or all account KBs). Returns chunks {content, documentId, similarity}.", inputSchema: SearchInputSchema }, h(searchTool));
   server.registerTool("ingest_document", { description: ingestDocumentDescription(transport), inputSchema: IngestDocumentInputSchema }, h(ingestDocumentTool));
   server.registerTool("ingest_batch", { description: ingestBatchDescription(transport), inputSchema: IngestBatchInputSchema }, h(ingestBatchTool));
+  server.registerTool("ingest_file", { description: ingestFileDescription(transport), inputSchema: IngestFileInputSchema }, h(ingestFileTool));
+  server.registerTool("ingest_files", { description: ingestFilesDescription(transport), inputSchema: IngestFilesInputSchema }, h(ingestFilesTool));
   server.registerTool("get_ingest_status", { description: "Poll KB + document ingest status (async pair for ingest_document/ingest_batch).", inputSchema: GetIngestStatusInputSchema }, h(getIngestStatusTool));
   server.registerTool("delete_document", { description: "Delete one or more documents from a knowledge base (batch).", inputSchema: DeleteDocumentInputSchema }, h(deleteDocumentTool));
   server.registerTool("get_document", { description: "Fetch a document by id (lists client-side; bounded by maxPages).", inputSchema: GetDocumentInputSchema }, h(getDocumentTool));

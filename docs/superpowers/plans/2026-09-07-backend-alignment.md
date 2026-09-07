@@ -853,25 +853,25 @@ function filenameFromDisposition(contentDisposition: string, documentId: string)
   return m ? decodeURIComponent(m[1]) : documentId;
 }
 
-async function resolveStdioDestination(outputPath: string | undefined, filename: string, downloadDir: string): Promise<{ dest: string; sandboxed: boolean }> {
+async function resolveStdioDestination(outputPath: string | undefined, filename: string, downloadDir: string): Promise<string> {
+  // Sandbox applies only when DOWNLOAD_DIR was explicitly set. Compare the raw
+  // configured value to the raw tmpdir (before realpath) so a symlinked default
+  // tmpdir (/var -> /private/var on macOS) doesn't accidentally enable sandboxing.
+  const sandboxed = downloadDir !== tmpdir();
+  let dirReal = downloadDir;
+  try { dirReal = await realpath(downloadDir); } catch { dirReal = downloadDir; }
   if (outputPath) {
     const candidate = resolve(outputPath);
     const parent = dirname(candidate);
     let parentReal: string;
     try { parentReal = await realpath(parent); } catch (e) { throw new Error(`outputPath parent is not a directory: ${parent} (${(e as Error).message})`); }
     const dest = join(parentReal, basename(candidate));
-    // When downloadDir is configured (not the default tmpdir), confine writes under it.
-    let dirReal = downloadDir;
-    try { dirReal = await realpath(downloadDir); } catch { /* default tmpdir always exists */ }
-    const sandboxed = dirReal !== tmpdir();
     if (sandboxed && dest !== dirReal && !dest.startsWith(dirReal + sep)) {
       throw new Error(`outputPath ${dest} is outside DOWNLOAD_DIR ${dirReal}`);
     }
-    return { dest, sandboxed };
+    return dest;
   }
-  let dirReal = downloadDir;
-  try { dirReal = await realpath(downloadDir); } catch { /* default tmpdir always exists */ }
-  return { dest: join(dirReal, filename), sandboxed: dirReal !== tmpdir() };
+  return join(dirReal, filename);
 }
 
 export async function downloadDocumentTool(deps: HandlerDeps, auth: AuthContext, args: { kbId: string; documentId: string; disposition?: "attachment" | "inline"; outputPath?: string }): Promise<ToolResult> {
@@ -886,8 +886,7 @@ export async function downloadDocumentTool(deps: HandlerDeps, auth: AuthContext,
   if (cfg.transport === "stdio") {
     let dest: string;
     try {
-      const out = await resolveStdioDestination(args.outputPath, filename, cfg.downloadDir);
-      dest = out.dest;
+      dest = await resolveStdioDestination(args.outputPath, filename, cfg.downloadDir);
       await mkdir(dirname(dest), { recursive: true });
       await writeFile(dest, bytes);
     } catch (e) {

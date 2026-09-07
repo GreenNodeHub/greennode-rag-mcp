@@ -9,7 +9,7 @@ export const KbId = z.string().regex(/^[A-Za-z0-9_-]+$/, "invalid kbId");
 export interface ChunkDto { content: string; documentId: string; similarity: number; }
 export interface DocumentMetadata { key: string; value: unknown; type: string; }
 export interface DocumentDto { id: string; name: string; size?: number; uploadType: string; metadata?: DocumentMetadata[]; status: string; createdAt?: string; }
-export interface KnowledgeBaseDto { id: string; name: string; description?: string; embeddingModel?: string; parsingMethod?: string; chunkingMethod?: string; chunkSize?: number; overlappedPercent?: number; serviceAccountValid?: boolean; status?: string; createdAt?: string; agents?: unknown[]; }
+export interface KnowledgeBaseDto { id: string; name: string; description?: string; embeddingModel?: string; llmModel?: string; parsingMethod?: string; chunkingMethod?: string; chunkSize?: number; overlappedPercent?: number; serviceAccountValid?: boolean; status?: string; createdAt?: string; agents?: unknown[]; }
 export interface KnowledgeBaseInstruction { id: string; instruction?: string; }
 export interface AgentBuilderDto { id: string; name: string; description?: string; instruction?: string; modelIdentifier?: string; status?: string; accessibility?: string; knowledgeBaseInfos?: KnowledgeBaseInstruction[]; }
 
@@ -19,3 +19,7 @@ export function buildDocumentFilter(filters?: { key: string; op: string; value: 
   if (filters.length === 1) return toSimple(filters[0]);
   return { kind: "compound", type: "AND", filters: filters.map(toSimple) };
 }
+
+export interface AIPlatformModelType { types: string[]; }
+export interface AIPlatformModelConfig { playground: AIPlatformModelType; }
+export interface AIPlatformModel { uuid: string; path: string; isEnabled: boolean; configs: AIPlatformModelConfig; }

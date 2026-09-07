@@ -135,8 +135,7 @@ Then replace the response-handling block (the lines starting `let res: …` thro
     try {
       res = await fetchImpl(url, init);
       if (req.raw) {
-        const ab = res.arrayBuffer ? await res.arrayBuffer() : Buffer.from(await res.text(), "utf8");
-        rawBytes = Buffer.from(ab);
+        rawBytes = res.arrayBuffer ? Buffer.from(await res.arrayBuffer()) : Buffer.from(await res.text(), "utf8");
         rawText = "";
       } else {
         rawText = await res.text();

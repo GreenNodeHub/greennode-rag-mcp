@@ -6,7 +6,10 @@ import { searchTool, SearchInputSchema } from "./search.js";
 import { ingestDocumentTool, ingestBatchTool, IngestDocumentInputSchema, IngestBatchInputSchema } from "./ingest.js";
 import { ingestFileTool, ingestFilesTool, IngestFileInputSchema, IngestFilesInputSchema } from "./ingestFile.js";
 import { listDocumentsTool, getDocumentTool, deleteDocumentTool, getIngestStatusTool, ListDocumentsInputSchema, GetDocumentInputSchema, DeleteDocumentInputSchema, GetIngestStatusInputSchema } from "./documents.js";
+import { restartDocumentTool, cancelDocumentTool, downloadDocumentTool, updateDocumentMetadataTool, RestartDocumentInputSchema, CancelDocumentInputSchema, DownloadDocumentInputSchema, UpdateDocumentMetadataInputSchema } from "./documents.js";
 import { listKnowledgeBasesTool, createKnowledgeBaseTool, deleteKnowledgeBaseTool, getKnowledgeBaseTool, ListKnowledgeBasesInputSchema, CreateKnowledgeBaseInputSchema, DeleteKnowledgeBaseInputSchema, GetKnowledgeBaseInputSchema } from "./knowledgeBases.js";
+import { updateKnowledgeBaseTool, UpdateKnowledgeBaseInputSchema } from "./knowledgeBases.js";
+import { listModelsTool, ListModelsInputSchema } from "./models.js";
 
 // Ingest upload guidance is transport-specific so the agent never has to guess.
 // stdio: server is local — read the file, base64 it, pass as `data`.
@@ -44,6 +47,14 @@ function ingestFilesDescription(transport: Transport): string {
   return base + " HTTP (remote server): each path must be readable on the server's filesystem (e.g. a shared volume), not your laptop's; otherwise run locally over stdio." + INGEST_FLOW;
 }
 
+function downloadDocumentDescription(transport: Transport): string {
+  const base = "Download a document's raw bytes from a knowledge base (disposition is cosmetic — identical bytes either way).";
+  if (transport === "stdio") {
+    return base + " You are connected over stdio, so the server runs locally and writes the file to disk (under DOWNLOAD_DIR, or an explicit outputPath). Returns {path, filename, size, contentType} — read the file at path. Use this for large/binary documents.";
+  }
+  return base + " You are connected over streamable HTTP, so the server is REMOTE. It returns the bytes base64-encoded in {filename, size, contentType, contentBase64}, capped at maxResponseBytes (oversized files are truncated — download over stdio for the full file). For large files, prefer running the server locally over stdio.";
+}
+
 export function registerTools(server: McpServer, deps: HandlerDeps, auth: AuthContext): void {
   const h = <A,>(fn: (d: HandlerDeps, a: AuthContext, args: A) => Promise<any>) => (async (args: A) => fn(deps, auth, args)) as any;
   const transport = deps.config.transport;
@@ -57,8 +68,14 @@ export function registerTools(server: McpServer, deps: HandlerDeps, auth: AuthCo
   server.registerTool("delete_document", { description: "Delete one or more documents from a knowledge base (batch).", inputSchema: DeleteDocumentInputSchema }, h(deleteDocumentTool));
   server.registerTool("get_document", { description: "Fetch a document by id (lists client-side; bounded by maxPages).", inputSchema: GetDocumentInputSchema }, h(getDocumentTool));
   server.registerTool("list_documents", { description: "List documents in a knowledge base (paginated).", inputSchema: ListDocumentsInputSchema }, h(listDocumentsTool));
+  server.registerTool("restart_document", { description: "Restart (re-parse) a document: wipes vectors and re-embeds. Returns {jobIds}. Async — afterwards call get_ingest_status(kbId, documentId) and poll until ACTIVE.", inputSchema: RestartDocumentInputSchema }, h(restartDocumentTool));
+  server.registerTool("cancel_document", { description: "Cancel an in-flight document parse. The document ends in 'failed'; no embedding occurs.", inputSchema: CancelDocumentInputSchema }, h(cancelDocumentTool));
+  server.registerTool("download_document", { description: downloadDocumentDescription(transport), inputSchema: DownloadDocumentInputSchema }, h(downloadDocumentTool));
+  server.registerTool("update_document_metadata", { description: "Update a document's metadata (list of {key, value, type?}). Deduplicates by key, last wins.", inputSchema: UpdateDocumentMetadataInputSchema }, h(updateDocumentMetadataTool));
   server.registerTool("list_knowledge_bases", { description: "List knowledge bases. When engine is set, only the engine's KBs.", inputSchema: ListKnowledgeBasesInputSchema }, h(listKnowledgeBasesTool));
-  server.registerTool("create_knowledge_base", { description: "Create a knowledge base.", inputSchema: CreateKnowledgeBaseInputSchema }, h(createKnowledgeBaseTool));
-  server.registerTool("delete_knowledge_base", { description: "Delete a knowledge base (fails if agents use it).", inputSchema: DeleteKnowledgeBaseInputSchema }, h(deleteKnowledgeBaseTool));
+  server.registerTool("create_knowledge_base", { description: "Create a knowledge base. embeddingModel from list_models(type=embedding); optional llmModel from list_models(type=chat).", inputSchema: CreateKnowledgeBaseInputSchema }, h(createKnowledgeBaseTool));
+  server.registerTool("update_knowledge_base", { description: "Update a knowledge base's description.", inputSchema: UpdateKnowledgeBaseInputSchema }, h(updateKnowledgeBaseTool));
   server.registerTool("get_knowledge_base", { description: "Get knowledge-base detail.", inputSchema: GetKnowledgeBaseInputSchema }, h(getKnowledgeBaseTool));
+  server.registerTool("delete_knowledge_base", { description: "Delete a knowledge base (fails if agents use it).", inputSchema: DeleteKnowledgeBaseInputSchema }, h(deleteKnowledgeBaseTool));
+  server.registerTool("list_models", { description: "List active AI-platform models. type=embedding = valid embeddingModel for create_knowledge_base; type=chat = valid llmModel; type=all (default) = both. Models match by uuid OR path.", inputSchema: ListModelsInputSchema }, h(listModelsTool));
 }

@@ -24,11 +24,13 @@ async function toolNames(cfg: EnvConfig): Promise<Record<string, string>> {
 }
 
 describe("createMcpServer", () => {
-  it("exposes exactly 13 tools", async () => {
+  it("exposes exactly 19 tools", async () => {
     const byName = await toolNames(config);
     expect(Object.keys(byName).sort()).toEqual([
-      "create_knowledge_base", "delete_document", "delete_knowledge_base", "get_document", "get_ingest_status", "get_knowledge_base",
-      "ingest_batch", "ingest_document", "ingest_file", "ingest_files", "list_documents", "list_knowledge_bases", "search",
+      "cancel_document", "create_knowledge_base", "delete_document", "delete_knowledge_base", "download_document",
+      "get_document", "get_ingest_status", "get_knowledge_base", "ingest_batch", "ingest_document", "ingest_file",
+      "ingest_files", "list_documents", "list_knowledge_bases", "list_models", "restart_document", "search",
+      "update_document_metadata", "update_knowledge_base",
     ]);
   });
 
@@ -44,6 +46,14 @@ describe("createMcpServer", () => {
     expect(http).toMatch(/check the file size/);
     expect(http).toMatch(/STOP and do NOT inline/);
     expect(http).toMatch(/run this MCP server locally over stdio/);
+  });
+
+  it("download_document description is transport-aware", async () => {
+    const stdio = (await toolNames(config)).download_document;
+    const http = (await toolNames(httpConfig)).download_document;
+    expect(stdio).toMatch(/writes the file to disk/);
+    expect(http).toMatch(/base64/);
+    expect(http).toMatch(/REMOTE|remote/);
   });
 
   it("advertises the package.json version, not the stale 0.1.0", async () => {

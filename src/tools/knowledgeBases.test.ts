@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { listKnowledgeBasesTool, createKnowledgeBaseTool, deleteKnowledgeBaseTool, getKnowledgeBaseTool } from "./knowledgeBases.js";
+import { z } from "zod";
+import { listKnowledgeBasesTool, createKnowledgeBaseTool, deleteKnowledgeBaseTool, getKnowledgeBaseTool, updateKnowledgeBaseTool, UpdateKnowledgeBaseInputSchema } from "./knowledgeBases.js";
 import type { BackendClient } from "../http/downstream.js";
 import type { EnvConfig } from "../config/env.js";
 
@@ -50,5 +51,24 @@ describe("getKnowledgeBaseTool", () => {
     const backend: BackendClient = async (req) => { expect(req.path).toBe("/knowledge-bases/kb1"); return { status: 200, body: { id: "kb1", name: "k" } }; };
     const res = await getKnowledgeBaseTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1" });
     expect(JSON.parse(res.content[0].text)).toMatchObject({ id: "kb1" });
+  });
+});
+
+describe("updateKnowledgeBaseTool", () => {
+  it("PATCHes description and returns synthetic ack", async () => {
+    const backend: BackendClient = async (req) => { expect(req.method).toBe("PATCH"); expect(req.path).toBe("/knowledge-bases/kb1/update"); expect(req.body).toEqual({ description: "new" }); return { status: 200, body: undefined }; };
+    const res = await updateKnowledgeBaseTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1", description: "new" });
+    expect(res.isError).toBeUndefined();
+    expect(JSON.parse(res.content[0].text)).toMatchObject({ updated: "kb1" });
+  });
+  it("returns httpError on 404", async () => {
+    const backend: BackendClient = async () => ({ status: 404, body: { message: "not found" } });
+    const res = await updateKnowledgeBaseTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1", description: "x" });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/HTTP 404/);
+  });
+  it("rejects an invalid kbId", () => {
+    const parsed = z.object(UpdateKnowledgeBaseInputSchema).safeParse({ kbId: "a/b", description: "x" });
+    expect(parsed.success).toBe(false);
   });
 });

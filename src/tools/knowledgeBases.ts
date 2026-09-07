@@ -58,3 +58,13 @@ export async function getKnowledgeBaseTool(deps: HandlerDeps, auth: AuthContext,
   if (res.status >= 400) return httpError(res.status, res.body);
   return ok(res.body);
 }
+
+export const UpdateKnowledgeBaseInputSchema = {
+  kbId: KbId,
+  description: z.string().describe("New description. May be empty string."),
+};
+export async function updateKnowledgeBaseTool(deps: HandlerDeps, auth: AuthContext, args: { kbId: string; description: string }): Promise<ToolResult> {
+  const res = await deps.backend({ method: "PATCH", path: `/knowledge-bases/${args.kbId}/update`, body: { description: args.description }, bearerToken: auth.bearerToken });
+  if (res.status >= 400) return httpError(res.status, res.body);
+  return ok({ updated: args.kbId });
+}

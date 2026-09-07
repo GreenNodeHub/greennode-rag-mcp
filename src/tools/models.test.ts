@@ -11,7 +11,7 @@ const embedModels = [{ uuid: "u-emb", path: "text-embedding-3", isEnabled: true,
 
 describe("listModelsTool", () => {
   it("type=all merges chat + embedding into an object", async () => {
-    const backend: BackendClient = async (req) => { expect(req.path).toBe("/models"); expect(req.query.type).toMatch(/^(chat|embedding)$/); return { status: 200, body: req.query!.type === "chat" ? chatModels : embedModels }; };
+    const backend: BackendClient = async (req) => { expect(req.path).toBe("/models"); expect(req.query!.type).toMatch(/^(chat|embedding)$/); return { status: 200, body: req.query!.type === "chat" ? chatModels : embedModels }; };
     const res = await listModelsTool({ config, backend }, { bearerToken: "t" }, {});
     const body = JSON.parse(res.content[0].text);
     expect(body.chat).toEqual(chatModels);
@@ -35,7 +35,7 @@ describe("listModelsTool", () => {
   });
   it("type=all returns httpError when a merge sub-call fails", async () => {
     const backend: BackendClient = async (req) => {
-      if (req.query.type === "chat") return { status: 400, body: { message: "bad" } };
+      if (req.query?.type === "chat") return { status: 400, body: { message: "bad" } };
       return { status: 200, body: embedModels };
     };
     const res = await listModelsTool({ config, backend }, { bearerToken: "t" }, {});

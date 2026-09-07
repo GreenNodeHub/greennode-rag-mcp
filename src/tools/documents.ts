@@ -92,7 +92,10 @@ export const UpdateDocumentMetadataInputSchema = {
 export async function updateDocumentMetadataTool(deps: HandlerDeps, auth: AuthContext, args: { kbId: string; documentId: string; metadata: { key: string; value: unknown; type?: string }[] }): Promise<ToolResult> {
   const res = await deps.backend({ method: "PATCH", path: `/knowledge-bases/${args.kbId}/documents/${args.documentId}/metadata`, body: { metadata: args.metadata }, bearerToken: auth.bearerToken });
   if (res.status >= 400) return httpError(res.status, res.body);
-  return ok({ updated: args.documentId, count: args.metadata.length });
+  // Backend deduplicates by key (last wins); report the deduped count accurately
+  // while forwarding the full raw list intact (the backend does its own dedup).
+  const dedupedCount = new Map(args.metadata.map((m) => [m.key, m])).size;
+  return ok({ updated: args.documentId, count: dedupedCount });
 }
 
 export const DownloadDocumentInputSchema = {
@@ -105,8 +108,16 @@ export const DownloadDocumentInputSchema = {
 const DOWNLOAD_TRUNCATION = "\n…[truncated — download over stdio for the full file]";
 
 function filenameFromDisposition(contentDisposition: string, documentId: string): string {
-  const m = contentDisposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
-  return m ? decodeURIComponent(m[1]) : documentId;
+  // RFC 6266: filename*=UTF-8''<percent-encoded>; filename="<literal>". Only the
+  // ext-value form is percent-encoded — decode that (guarded), treat quoted
+  // filename= as a literal. Never throws: a malformed % sequence falls back to
+  // the raw captured token, and no match falls back to documentId.
+  const star = contentDisposition.match(/filename\*=UTF-8''"?([^";]+)"?/i);
+  if (star) {
+    try { return decodeURIComponent(star[1]); } catch { return star[1]; }
+  }
+  const lit = contentDisposition.match(/filename="?([^";]+)"?/i);
+  return lit ? lit[1] : documentId;
 }
 
 async function resolveStdioDestination(outputPath: string | undefined, filename: string, downloadDir: string): Promise<string> {

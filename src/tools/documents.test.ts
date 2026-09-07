@@ -105,6 +105,14 @@ describe("updateDocumentMetadataTool", () => {
     const parsed = z.object(UpdateDocumentMetadataInputSchema).safeParse({ kbId: "kb1", documentId: "d1", metadata: [{ key: "k" }] });
     expect(parsed.success).toBe(false);
   });
+  it("returns deduped count while forwarding the full raw list to backend", async () => {
+    const entries = [{ key: "a", value: 1 }, { key: "a", value: 2 }, { key: "b", value: 3 }];
+    let capturedBody: unknown;
+    const backend: BackendClient = async (req) => { expect(req.method).toBe("PATCH"); expect(req.path).toBe("/knowledge-bases/kb1/documents/d1/metadata"); capturedBody = req.body; return { status: 200, body: undefined }; };
+    const res = await updateDocumentMetadataTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1", documentId: "d1", metadata: entries });
+    expect(JSON.parse(res.content[0].text)).toEqual({ updated: "d1", count: 2 });
+    expect(capturedBody).toEqual({ metadata: entries });
+  });
 });
 
 let dlDir: string;
@@ -133,6 +141,14 @@ describe("downloadDocumentTool (stdio)", () => {
     const res = await downloadDocumentTool({ config: stdioConfig, backend }, { bearerToken: "t" }, { kbId: "kb1", documentId: "d1", outputPath: "/etc/passwd" });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toMatch(/outside DOWNLOAD_DIR/);
+  });
+
+  it("does not throw on a literal filename containing % (filename= form is not decoded)", async () => {
+    const backend: BackendClient = async () => ({ status: 200, body: undefined, bytes: pngBytes, contentType: "image/png", contentDisposition: 'attachment; filename="100%done.pdf"' });
+    const res = await downloadDocumentTool({ config: stdioConfig, backend }, { bearerToken: "t" }, { kbId: "kb1", documentId: "d1" });
+    expect(res.isError).not.toBe(true);
+    const body = JSON.parse(res.content[0].text);
+    expect(body.filename).toBe("100%done.pdf");
   });
 });
 
@@ -163,5 +179,13 @@ describe("downloadDocumentTool (http)", () => {
     const res = await downloadDocumentTool({ config: httpConfig, backend }, { bearerToken: "t" }, { kbId: "kb1", documentId: "d1" });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toMatch(/HTTP 404/);
+  });
+
+  it("decodes percent-encoded filename* (UTF-8'') without throwing", async () => {
+    const backend: BackendClient = async () => ({ status: 200, body: undefined, bytes: pngBytes, contentType: "image/png", contentDisposition: "attachment; filename*=UTF-8''100%25done.pdf" });
+    const res = await downloadDocumentTool({ config: httpConfig, backend }, { bearerToken: "t" }, { kbId: "kb1", documentId: "d1" });
+    expect(res.isError).not.toBe(true);
+    const body = JSON.parse(res.content[0].text);
+    expect(body.filename).toBe("100%done.pdf");
   });
 });

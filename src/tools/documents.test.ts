@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-import { listDocumentsTool, getDocumentTool, deleteDocumentTool, getIngestStatusTool, ListDocumentsInputSchema } from "./documents.js";
+import { listDocumentsTool, getDocumentTool, deleteDocumentTool, getIngestStatusTool, restartDocumentTool, cancelDocumentTool, ListDocumentsInputSchema, RestartDocumentInputSchema, CancelDocumentInputSchema } from "./documents.js";
 import type { BackendClient } from "../http/downstream.js";
 import type { EnvConfig } from "../config/env.js";
 
@@ -53,5 +53,31 @@ describe("kbId format guard", () => {
   it("accepts a well-formed kbId", () => {
     const parsed = z.object(ListDocumentsInputSchema).safeParse({ kbId: "kb-1_2" });
     expect(parsed.success).toBe(true);
+  });
+});
+
+describe("restartDocumentTool", () => {
+  it("POSTs restart and returns jobIds (202)", async () => {
+    const backend: BackendClient = async (req) => { expect(req.method).toBe("POST"); expect(req.path).toBe("/knowledge-bases/kb1/documents/d1/restart"); expect(req.body).toBeUndefined(); return { status: 202, body: { jobIds: ["job-1"] } }; };
+    const res = await restartDocumentTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1", documentId: "d1" });
+    expect(JSON.parse(res.content[0].text)).toEqual({ jobIds: ["job-1"] });
+  });
+  it("returns httpError on 4xx", async () => {
+    const backend: BackendClient = async () => ({ status: 400, body: { message: "bad" } });
+    const res = await restartDocumentTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1", documentId: "d1" });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/HTTP 400/);
+  });
+});
+
+describe("cancelDocumentTool", () => {
+  it("POSTs cancel and returns synthetic ack (200)", async () => {
+    const backend: BackendClient = async (req) => { expect(req.method).toBe("POST"); expect(req.path).toBe("/knowledge-bases/kb1/documents/d1/cancel"); expect(req.body).toBeUndefined(); return { status: 200, body: undefined }; };
+    const res = await cancelDocumentTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1", documentId: "d1" });
+    expect(JSON.parse(res.content[0].text)).toEqual({ cancelled: "d1" });
+  });
+  it("rejects an invalid kbId", () => {
+    const parsed = z.object(CancelDocumentInputSchema).safeParse({ kbId: "a/b", documentId: "d1" });
+    expect(parsed.success).toBe(false);
   });
 });

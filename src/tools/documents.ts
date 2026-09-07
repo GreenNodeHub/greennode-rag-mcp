@@ -59,3 +59,17 @@ export async function getIngestStatusTool(deps: HandlerDeps, auth: AuthContext, 
   if (args.documentId) documents = documents.filter((d: any) => d?.id === args.documentId);
   return ok({ kb: kbRes.body, documents });
 }
+
+export const RestartDocumentInputSchema = { kbId: KbId, documentId: z.string() };
+export async function restartDocumentTool(deps: HandlerDeps, auth: AuthContext, args: { kbId: string; documentId: string }): Promise<ToolResult> {
+  const res = await deps.backend({ method: "POST", path: `/knowledge-bases/${args.kbId}/documents/${args.documentId}/restart`, bearerToken: auth.bearerToken });
+  if (res.status >= 400) return httpError(res.status, res.body);
+  return ok(res.body);
+}
+
+export const CancelDocumentInputSchema = { kbId: KbId, documentId: z.string() };
+export async function cancelDocumentTool(deps: HandlerDeps, auth: AuthContext, args: { kbId: string; documentId: string }): Promise<ToolResult> {
+  const res = await deps.backend({ method: "POST", path: `/knowledge-bases/${args.kbId}/documents/${args.documentId}/cancel`, bearerToken: auth.bearerToken });
+  if (res.status >= 400) return httpError(res.status, res.body);
+  return ok({ cancelled: args.documentId });
+}

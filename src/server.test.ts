@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMcpServer } from "./server.js";
+import { VERSION } from "./version.js";
 import { createBackendClient } from "./http/downstream.js";
 import type { EnvConfig } from "./config/env.js";
 
@@ -43,5 +44,16 @@ describe("createMcpServer", () => {
     expect(http).toMatch(/check the file size/);
     expect(http).toMatch(/STOP and do NOT inline/);
     expect(http).toMatch(/run this MCP server locally over stdio/);
+  });
+
+  it("advertises the package.json version, not the stale 0.1.0", async () => {
+    const deps = { config, backend: createBackendClient("https://x", fakeFetch()) };
+    const server = createMcpServer(deps, { bearerToken: "t" });
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "test", version: "1" });
+    await Promise.all([server.connect(serverT), client.connect(clientT)]);
+    const v = client.getServerVersion();
+    expect(v?.version).toBe(VERSION);
+    expect(v?.version).not.toBe("0.1.0");
   });
 });

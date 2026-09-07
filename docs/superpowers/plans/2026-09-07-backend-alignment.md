@@ -208,7 +208,7 @@ import { createRequire } from "node:module";
 import { VERSION } from "./version.js";
 
 const require = createRequire(import.meta.url);
-const pkg = require("../../package.json") as { version: string };
+const pkg = require("../package.json") as { version: string };
 
 describe("VERSION", () => {
   it("matches package.json version", () => {
@@ -235,9 +235,9 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 // src/version.ts and dist/version.js are both one level below the repo root,
-// so "../../package.json" resolves to the same package.json in dev (tsx) and prod.
+// so one ".." resolves to the same repo-root package.json in dev (tsx) and prod.
 const here = dirname(fileURLToPath(import.meta.url));
-const pkgPath = resolve(here, "..", "..", "package.json");
+const pkgPath = resolve(here, "..", "package.json");
 const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: string };
 
 export const VERSION: string = pkg.version ?? "0.0.0";

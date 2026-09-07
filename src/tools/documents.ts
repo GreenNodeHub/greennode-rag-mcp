@@ -1,10 +1,14 @@
 import { z } from "zod";
+import { writeFile, realpath, mkdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import type { HandlerDeps } from "./types.js";
 import type { AuthContext } from "../auth/inbound.js";
 import type { ToolResult } from "../util/result.js";
 import { ok, okList, fail, httpError } from "../util/result.js";
 import { KbId } from "../schema/backend.js";
 import { itemsOf } from "../util/list.js";
+import { log } from "../util/log.js";
 
 export const ListDocumentsInputSchema = {
   kbId: KbId,
@@ -89,4 +93,72 @@ export async function updateDocumentMetadataTool(deps: HandlerDeps, auth: AuthCo
   const res = await deps.backend({ method: "PATCH", path: `/knowledge-bases/${args.kbId}/documents/${args.documentId}/metadata`, body: { metadata: args.metadata }, bearerToken: auth.bearerToken });
   if (res.status >= 400) return httpError(res.status, res.body);
   return ok({ updated: args.documentId, count: args.metadata.length });
+}
+
+export const DownloadDocumentInputSchema = {
+  kbId: KbId,
+  documentId: z.string(),
+  disposition: z.enum(["attachment", "inline"]).optional().describe("Cosmetic — identical bytes either way; kept for backend parity. Default: attachment."),
+  outputPath: z.string().optional().describe("stdio only: where to save the file. Defaults to DOWNLOAD_DIR/<filename>. When DOWNLOAD_DIR is set, must resolve under it."),
+};
+
+const DOWNLOAD_TRUNCATION = "\n…[truncated — download over stdio for the full file]";
+
+function filenameFromDisposition(contentDisposition: string, documentId: string): string {
+  const m = contentDisposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+  return m ? decodeURIComponent(m[1]) : documentId;
+}
+
+async function resolveStdioDestination(outputPath: string | undefined, filename: string, downloadDir: string): Promise<string> {
+  // Sandbox applies only when DOWNLOAD_DIR was explicitly set. Compare the raw
+  // configured value to the raw tmpdir (before realpath) so a symlinked default
+  // tmpdir (/var -> /private/var on macOS) doesn't accidentally enable sandboxing.
+  const sandboxed = downloadDir !== tmpdir();
+  let dirReal = downloadDir;
+  try { dirReal = await realpath(downloadDir); } catch { dirReal = downloadDir; }
+  if (outputPath) {
+    const candidate = resolve(outputPath);
+    const parent = dirname(candidate);
+    let parentReal: string;
+    try { parentReal = await realpath(parent); } catch (e) { throw new Error(`outputPath parent is not a directory: ${parent} (${(e as Error).message})`); }
+    const dest = join(parentReal, basename(candidate));
+    if (sandboxed && dest !== dirReal && !dest.startsWith(dirReal + sep)) {
+      throw new Error(`outputPath ${dest} is outside DOWNLOAD_DIR ${dirReal}`);
+    }
+    return dest;
+  }
+  return join(dirReal, filename);
+}
+
+export async function downloadDocumentTool(deps: HandlerDeps, auth: AuthContext, args: { kbId: string; documentId: string; disposition?: "attachment" | "inline"; outputPath?: string }): Promise<ToolResult> {
+  const disposition = args.disposition ?? "attachment";
+  const cfg = deps.config;
+  const res = await deps.backend({ method: "GET", path: `/knowledge-bases/${args.kbId}/documents/${args.documentId}/download`, query: { disposition }, raw: true, bearerToken: auth.bearerToken });
+  if (res.status >= 400) return httpError(res.status, res.body);
+  const bytes = res.bytes ?? Buffer.alloc(0);
+  const contentType = res.contentType ?? "application/octet-stream";
+  const filename = filenameFromDisposition(res.contentDisposition ?? "", args.documentId);
+
+  if (cfg.transport === "stdio") {
+    let dest: string;
+    try {
+      dest = await resolveStdioDestination(args.outputPath, filename, cfg.downloadDir);
+      await mkdir(dirname(dest), { recursive: true });
+      await writeFile(dest, bytes);
+    } catch (e) {
+      return fail((e as Error).message);
+    }
+    log.info("download saved", { kbId: args.kbId, documentId: args.documentId, path: dest, bytes: bytes.length });
+    return ok({ path: dest, filename, size: bytes.length, contentType });
+  }
+
+  // http: return base64, capped at maxResponseBytes
+  const contentBase64 = bytes.toString("base64");
+  const payload = { filename, size: bytes.length, contentType, contentBase64 };
+  const text = JSON.stringify(payload);
+  if (Buffer.byteLength(text, "utf8") <= cfg.maxResponseBytes) return ok(payload);
+  const frame = JSON.stringify({ filename, size: bytes.length, contentType, contentBase64: "" });
+  const budget = Math.max(0, cfg.maxResponseBytes - Buffer.byteLength(frame, "utf8") - Buffer.byteLength(DOWNLOAD_TRUNCATION, "utf8"));
+  const truncated = JSON.stringify({ filename, size: bytes.length, contentType, contentBase64: contentBase64.slice(0, budget) }) + DOWNLOAD_TRUNCATION;
+  return { content: [{ type: "text", text: truncated }] };
 }

@@ -1,6 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { z } from "zod";
-import { listDocumentsTool, getDocumentTool, deleteDocumentTool, getIngestStatusTool, restartDocumentTool, cancelDocumentTool, updateDocumentMetadataTool, ListDocumentsInputSchema, RestartDocumentInputSchema, CancelDocumentInputSchema, UpdateDocumentMetadataInputSchema } from "./documents.js";
+import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { listDocumentsTool, getDocumentTool, deleteDocumentTool, getIngestStatusTool, restartDocumentTool, cancelDocumentTool, updateDocumentMetadataTool, downloadDocumentTool, ListDocumentsInputSchema, RestartDocumentInputSchema, CancelDocumentInputSchema, UpdateDocumentMetadataInputSchema, DownloadDocumentInputSchema } from "./documents.js";
 import type { BackendClient } from "../http/downstream.js";
 import type { EnvConfig } from "../config/env.js";
 
@@ -101,5 +104,64 @@ describe("updateDocumentMetadataTool", () => {
   it("rejects metadata entry missing key or value", () => {
     const parsed = z.object(UpdateDocumentMetadataInputSchema).safeParse({ kbId: "kb1", documentId: "d1", metadata: [{ key: "k" }] });
     expect(parsed.success).toBe(false);
+  });
+});
+
+let dlDir: string;
+beforeAll(async () => { dlDir = await mkdtemp(join(tmpdir(), "download-")); });
+afterAll(async () => { await rm(dlDir, { recursive: true, force: true }); });
+
+const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+describe("downloadDocumentTool (stdio)", () => {
+  // `dlDir` is assigned in beforeAll (after this describe body runs at collection
+  // time), so read it live via a getter — otherwise downloadDir would capture undefined.
+  const stdioConfig = { ...config, transport: "stdio" as const, get downloadDir() { return dlDir; } } as EnvConfig;
+
+  it("writes bytes to downloadDir and returns path + size", async () => {
+    const backend: BackendClient = async (req) => { expect(req.method).toBe("GET"); expect(req.path).toBe("/knowledge-bases/kb1/documents/d1/download"); expect(req.query).toMatchObject({ disposition: "attachment" }); expect(req.raw).toBe(true); return { status: 200, body: undefined, bytes: pngBytes, contentType: "image/png", contentDisposition: 'attachment; filename="pic.png"' }; };
+    const res = await downloadDocumentTool({ config: stdioConfig, backend }, { bearerToken: "t" }, { kbId: "kb1", documentId: "d1" });
+    const body = JSON.parse(res.content[0].text);
+    expect(body.filename).toBe("pic.png");
+    expect(body.size).toBe(pngBytes.length);
+    expect(body.contentType).toBe("image/png");
+    expect(await readFile(body.path)).toEqual(pngBytes);
+  });
+
+  it("rejects outputPath outside downloadDir", async () => {
+    const backend: BackendClient = async () => ({ status: 200, body: undefined, bytes: pngBytes, contentType: "image/png", contentDisposition: 'attachment; filename="pic.png"' });
+    const res = await downloadDocumentTool({ config: stdioConfig, backend }, { bearerToken: "t" }, { kbId: "kb1", documentId: "d1", outputPath: "/etc/passwd" });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/outside DOWNLOAD_DIR/);
+  });
+});
+
+describe("downloadDocumentTool (http)", () => {
+  const httpConfig = { ...config, transport: "http" as const, get downloadDir() { return dlDir; } } as EnvConfig;
+
+  it("returns base64 content (no disk write)", async () => {
+    const backend: BackendClient = async () => ({ status: 200, body: undefined, bytes: pngBytes, contentType: "image/png", contentDisposition: 'attachment; filename="pic.png"' });
+    const res = await downloadDocumentTool({ config: httpConfig, backend }, { bearerToken: "t" }, { kbId: "kb1", documentId: "d1" });
+    const body = JSON.parse(res.content[0].text);
+    expect(body.filename).toBe("pic.png");
+    expect(body.size).toBe(pngBytes.length);
+    expect(body.contentType).toBe("image/png");
+    expect(body.contentBase64).toBe(pngBytes.toString("base64"));
+    expect(body.path).toBeUndefined();
+  });
+
+  it("truncates oversized base64 with a download-specific notice", async () => {
+    const bigBytes = Buffer.alloc(100_000, 0x41); // 100 KB -> ~133 KB base64, exceeds maxResponseBytes 25000
+    const backend: BackendClient = async () => ({ status: 200, body: undefined, bytes: bigBytes, contentType: "application/octet-stream", contentDisposition: 'attachment; filename="big.bin"' });
+    const res = await downloadDocumentTool({ config: httpConfig, backend }, { bearerToken: "t" }, { kbId: "kb1", documentId: "d1" });
+    expect(res.content[0].text).toMatch(/truncated — download over stdio/);
+    expect(Buffer.byteLength(res.content[0].text, "utf8")).toBeLessThanOrEqual(httpConfig.maxResponseBytes);
+  });
+
+  it("returns httpError on 404", async () => {
+    const backend: BackendClient = async () => ({ status: 404, body: { message: "file not found" } });
+    const res = await downloadDocumentTool({ config: httpConfig, backend }, { bearerToken: "t" }, { kbId: "kb1", documentId: "d1" });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/HTTP 404/);
   });
 });

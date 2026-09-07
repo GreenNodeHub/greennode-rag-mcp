@@ -11,6 +11,7 @@ const config = {
   maxResponseBytes: 25000, defaultPageSize: 10, maxGetDocumentPages: 10,
   logLevel: "info" as const, backendTimeoutMs: 300000,
   maxIngestFileBytes: 104_857_600, allowedExtensions: ["pdf", "txt", "png"], allowedRoots: [],
+  downloadDir: tmpdir(),
 } as EnvConfig;
 
 let dir: string;

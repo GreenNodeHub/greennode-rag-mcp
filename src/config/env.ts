@@ -1,5 +1,6 @@
 import type { LogLevel } from "../util/log.js";
 import { parseLogLevel } from "../util/log.js";
+import { tmpdir } from "node:os";
 
 export type Transport = "stdio" | "http";
 
@@ -30,6 +31,7 @@ export interface EnvConfig {
   maxIngestFileBytes: number;
   allowedExtensions: string[];
   allowedRoots: string[];
+  downloadDir: string;
 }
 
 export function loadEnvConfig(env: NodeJS.ProcessEnv): EnvConfig {
@@ -55,5 +57,6 @@ export function loadEnvConfig(env: NodeJS.ProcessEnv): EnvConfig {
     maxIngestFileBytes: Number(env.MAX_INGEST_FILE_BYTES ?? 104_857_600),
     allowedExtensions,
     allowedRoots,
+    downloadDir: env.DOWNLOAD_DIR ?? tmpdir(),
   };
 }

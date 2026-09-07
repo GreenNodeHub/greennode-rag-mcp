@@ -42,4 +42,12 @@ describe("loadEnvConfig", () => {
     expect(cfg.allowedExtensions).toEqual(["pdf", "txt", "json"]);
     expect(cfg.allowedRoots).toEqual(["/a", "/b"]);
   });
+  it("defaults downloadDir to os.tmpdir()", () => {
+    const cfg = loadEnvConfig({ BACKEND_URL: "https://x" });
+    expect(cfg.downloadDir).toBe(require("node:os").tmpdir());
+  });
+  it("reads DOWNLOAD_DIR", () => {
+    const cfg = loadEnvConfig({ BACKEND_URL: "https://x", DOWNLOAD_DIR: "/tmp/downloads" });
+    expect(cfg.downloadDir).toBe("/tmp/downloads");
+  });
 });

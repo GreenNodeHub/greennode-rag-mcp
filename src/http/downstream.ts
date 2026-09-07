@@ -3,6 +3,7 @@ import { log } from "../util/log.js";
 export type FetchLike = (url: string, init?: any) => Promise<{
   status: number;
   text(): Promise<string>;
+  arrayBuffer?(): Promise<ArrayBuffer>;
   headers: { get(name: string): string | null };
 }>;
 
@@ -12,10 +13,17 @@ export interface BackendCall {
   query?: Record<string, string | number | undefined>;
   body?: unknown;
   form?: FormData;
+  raw?: boolean;
   bearerToken: string;
 }
 
-export interface BackendResponse { status: number; body: unknown; }
+export interface BackendResponse {
+  status: number;
+  body: unknown;
+  bytes?: Buffer;
+  contentType?: string;
+  contentDisposition?: string;
+}
 
 export type BackendClient = (req: BackendCall) => Promise<BackendResponse>;
 
@@ -56,11 +64,17 @@ export function createBackendClient(baseUrl: string, fetchImpl: FetchLike = fetc
       timer = setTimeout(() => controller.abort(), timeoutMs);
     }
 
-    let res: { status: number; text(): Promise<string>; headers: { get(name: string): string | null } };
-    let raw: string;
+    let res: { status: number; text(): Promise<string>; arrayBuffer?(): Promise<ArrayBuffer>; headers: { get(name: string): string | null } };
+    let rawText: string;
+    let rawBytes: Buffer | undefined;
     try {
       res = await fetchImpl(url, init);
-      raw = await res.text();
+      if (req.raw) {
+        rawBytes = res.arrayBuffer ? Buffer.from(await res.arrayBuffer()) : Buffer.from(await res.text(), "utf8");
+        rawText = "";
+      } else {
+        rawText = await res.text();
+      }
     } catch (e) {
       if (timer) clearTimeout(timer);
       const ms = Date.now() - t0;
@@ -74,12 +88,23 @@ export function createBackendClient(baseUrl: string, fetchImpl: FetchLike = fetc
     if (timer) clearTimeout(timer);
     const ms = Date.now() - t0;
 
-    const contentType = res.headers.get("content-type") ?? "";
-    let body: unknown = raw;
-    if (contentType.includes("application/json") && raw.length > 0) {
-      try { body = JSON.parse(raw); } catch { body = raw; }
+    if (req.raw) {
+      log.info("backend ←", { method: req.method, path: req.path, status: res.status, ms, bytes: rawBytes!.length });
+      return {
+        status: res.status,
+        body: undefined,
+        bytes: rawBytes,
+        contentType: res.headers.get("content-type") ?? "application/octet-stream",
+        contentDisposition: res.headers.get("content-disposition") ?? "",
+      };
     }
-    log.info("backend ←", { method: req.method, path: req.path, status: res.status, ms, bytes: raw.length });
+
+    const contentType = res.headers.get("content-type") ?? "";
+    let body: unknown = rawText;
+    if (contentType.includes("application/json") && rawText.length > 0) {
+      try { body = JSON.parse(rawText); } catch { body = rawText; }
+    }
+    log.info("backend ←", { method: req.method, path: req.path, status: res.status, ms, bytes: rawText.length });
     return { status: res.status, body };
   };
 }

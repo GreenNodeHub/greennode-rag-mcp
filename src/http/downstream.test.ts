@@ -52,4 +52,35 @@ describe("createBackendClient", () => {
     expect(res.status).toBe(502);
     expect(res.body).toMatchObject({ error: "ECONNREFUSED" });
   });
+
+  it("raw mode returns bytes + content headers without JSON parsing", async () => {
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]); // PNG-ish binary, not valid UTF-8 round-trip via text()
+    const fetchImpl = async () => ({
+      status: 200,
+      text: async () => { throw new Error("text() must not be called in raw mode"); },
+      arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+      headers: { get: (name: string) => name === "content-type" ? "image/png" : name === "content-disposition" ? 'attachment; filename="pic.png"' : null },
+    });
+    const backend = createBackendClient("https://x", fetchImpl as any);
+    const res = await backend({ method: "GET", path: "/documents/d1/download", raw: true, bearerToken: "t" });
+    expect(res.status).toBe(200);
+    expect(res.body).toBeUndefined();
+    expect(Buffer.isBuffer(res.bytes)).toBe(true);
+    expect(res.bytes).toEqual(bytes);
+    expect(res.contentType).toBe("image/png");
+    expect(res.contentDisposition).toBe('attachment; filename="pic.png"');
+  });
+
+  it("raw mode falls back to text() when arrayBuffer is unavailable", async () => {
+    const fetchImpl = async () => ({
+      status: 200,
+      text: async () => "plain",
+      headers: { get: () => "text/plain" },
+    });
+    const backend = createBackendClient("https://x", fetchImpl as any);
+    const res = await backend({ method: "GET", path: "/d", raw: true, bearerToken: "t" });
+    expect(Buffer.isBuffer(res.bytes)).toBe(true);
+    expect(res.bytes!.toString("utf8")).toBe("plain");
+    expect(res.contentType).toBe("text/plain");
+  });
 });

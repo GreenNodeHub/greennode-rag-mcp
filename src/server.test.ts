@@ -56,7 +56,7 @@ describe("createMcpServer", () => {
     expect(http).toMatch(/REMOTE|remote/);
   });
 
-  it("advertises the package.json version, not the stale 0.1.0", async () => {
+  it("advertises the package.json version, not the stale 0.1.3", async () => {
     const deps = { config, backend: createBackendClient("https://x", fakeFetch()) };
     const server = createMcpServer(deps, { bearerToken: "t" });
     const [clientT, serverT] = InMemoryTransport.createLinkedPair();
@@ -64,6 +64,6 @@ describe("createMcpServer", () => {
     await Promise.all([server.connect(serverT), client.connect(clientT)]);
     const v = client.getServerVersion();
     expect(v?.version).toBe(VERSION);
-    expect(v?.version).not.toBe("0.1.0");
+    expect(v?.version).not.toBe("0.1.3");
   });
 });

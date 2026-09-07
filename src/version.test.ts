@@ -9,7 +9,7 @@ describe("VERSION", () => {
   it("matches package.json version", () => {
     expect(VERSION).toBe(pkg.version);
   });
-  it("is not the stale hardcoded 0.1.0", () => {
-    expect(VERSION).not.toBe("0.1.0");
+  it("is not the stale hardcoded 0.1.3", () => {
+    expect(VERSION).not.toBe("0.1.3");
   });
 });

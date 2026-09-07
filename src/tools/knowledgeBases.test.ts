@@ -26,6 +26,15 @@ describe("createKnowledgeBaseTool", () => {
     const res = await createKnowledgeBaseTool({ config, backend }, { bearerToken: "t" }, { name: "k", description: "d", embeddingModel: "e", parsingMethod: "default", chunkingMethod: "fixed-size" });
     expect(JSON.parse(res.content[0].text)).toMatchObject({ id: "kb1" });
   });
+  it("forwards llmModel when provided", async () => {
+    const backend: BackendClient = async (req) => { expect((req.body as any).llmModel).toBe("gpt-4o-mini"); return { status: 200, body: { id: "kb1", name: "k", llmModel: "gpt-4o-mini" } }; };
+    const res = await createKnowledgeBaseTool({ config, backend }, { bearerToken: "t" }, { name: "k", description: "d", embeddingModel: "e", parsingMethod: "default", chunkingMethod: "fixed-size", llmModel: "gpt-4o-mini" });
+    expect(JSON.parse(res.content[0].text)).toMatchObject({ llmModel: "gpt-4o-mini" });
+  });
+  it("omits llmModel from the body when not provided", async () => {
+    const backend: BackendClient = async (req) => { expect((req.body as any).llmModel).toBeUndefined(); return { status: 200, body: { id: "kb1" } }; };
+    await createKnowledgeBaseTool({ config, backend }, { bearerToken: "t" }, { name: "k", description: "d", embeddingModel: "e", parsingMethod: "default", chunkingMethod: "fixed-size" });
+  });
 });
 
 describe("deleteKnowledgeBaseTool", () => {

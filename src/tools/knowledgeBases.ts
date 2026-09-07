@@ -34,11 +34,12 @@ export async function listKnowledgeBasesTool(deps: HandlerDeps, auth: AuthContex
 
 export const CreateKnowledgeBaseInputSchema = {
   name: z.string(), description: z.string(), embeddingModel: z.string(),
+  llmModel: z.string().optional().describe("Optional LLM/chat model id (uuid or path) for metadata extraction. Pass a value from list_models(type=chat). If omitted, the backend uses a default."),
   parsingMethod: z.string(), chunkingMethod: z.string(),
   chunkSize: z.number().int().min(1).max(1000).optional(),
   overlappedPercent: z.number().int().min(1).max(50).optional(),
 };
-export async function createKnowledgeBaseTool(deps: HandlerDeps, auth: AuthContext, args: { name: string; description: string; embeddingModel: string; parsingMethod: string; chunkingMethod: string; chunkSize?: number; overlappedPercent?: number }): Promise<ToolResult> {
+export async function createKnowledgeBaseTool(deps: HandlerDeps, auth: AuthContext, args: { name: string; description: string; embeddingModel: string; llmModel?: string; parsingMethod: string; chunkingMethod: string; chunkSize?: number; overlappedPercent?: number }): Promise<ToolResult> {
   const res = await deps.backend({ method: "POST", path: "/knowledge-bases", body: args, bearerToken: auth.bearerToken });
   if (res.status >= 400) return httpError(res.status, res.body);
   return ok(res.body);

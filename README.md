@@ -1,6 +1,6 @@
 # greennode-rag-mcp
 
-An MCP server that exposes the GreenNode RAG REST APIs (knowledge bases, documents, search, ingest) as **13 tools**. It proxies `agent-platform-api` via its public gateway with pass-through OAuth bearer auth and optional `engine` (agent name) scoping. Runs locally over **stdio** (default) or remotely over **streamable HTTP**, with any MCP-speaking client.
+An MCP server that exposes the GreenNode RAG REST APIs (knowledge bases, documents, search, ingest) as **19 tools**. It proxies `agent-platform-api` via its public gateway with pass-through OAuth bearer auth and optional `engine` (agent name) scoping. Runs locally over **stdio** (default) or remotely over **streamable HTTP**, with any MCP-speaking client.
 
 ## Table of contents
 
@@ -63,7 +63,7 @@ Add `"ENGINE": "<agent name>"` to `env` to scope `search` and `list_knowledge_ba
 
 ## How it works
 
-The server exposes 13 tools that map onto the `agent-platform-api` RAG endpoints. Auth is pass-through: the MCP server forwards the caller's OAuth bearer to the gateway and never handles `portal-user-id` — the gateway validates the token and injects ownership. When an `engine` (agent name) is set, the server resolves it to KB ids via `GET /agents?searchName=` and scopes `search` / `list_knowledge_bases` to those KBs.
+The server exposes 19 tools that map onto the `agent-platform-api` RAG endpoints. Auth is pass-through: the MCP server forwards the caller's OAuth bearer to the gateway and never handles `portal-user-id` — the gateway validates the token and injects ownership. When an `engine` (agent name) is set, the server resolves it to KB ids via `GET /agents?searchName=` and scopes `search` / `list_knowledge_bases` to those KBs.
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
@@ -73,7 +73,7 @@ The server exposes 13 tools that map onto the `agent-platform-api` RAG endpoints
                           ▼
 ┌───────────────────────────────────────────────────────────────┐
 │  greennode-rag-mcp  (hand-written TypeScript)                 │
-│    • 13 tools: search, ingest_*, documents, knowledge_bases   │
+│    • 19 tools: search, ingest_*, documents, knowledge_bases   │
 │    • inbound auth: env token (stdio) / Authorization header   │
 │    • engine scoping: ENGINE env / X-Engine header → KB ids    │
 │    • list-response truncation (MAX_RESPONSE_BYTES)            │
@@ -85,7 +85,7 @@ The server exposes 13 tools that map onto the `agent-platform-api` RAG endpoints
 └───────────────────────────────────────────────────────────────┘
 ```
 
-### Tools (13)
+### Tools (19)
 
 | Tool | Key args | Notes |
 |---|---|---|
@@ -97,11 +97,17 @@ The server exposes 13 tools that map onto the `agent-platform-api` RAG endpoints
 | `get_ingest_status` | `kbId`, `documentId?` | Poll KB + document ingest status |
 | `list_documents` | `kbId`, `page?`, `size?` | Paginated |
 | `get_document` | `kbId`, `documentId`, `maxPages?` | Lists client-side; bounded by `maxPages` |
+| `restart_document` | `kbId`, `documentId` | Restart (re-parse) a document; returns `{jobIds}` |
+| `cancel_document` | `kbId`, `documentId` | Cancel an in-flight document parse |
+| `download_document` | `kbId`, `documentId` | Transport-aware: stdio writes to disk, http returns base64 |
+| `update_document_metadata` | `kbId`, `documentId`, `metadata[]` | Update a document's metadata (`{key, value, type?}`) |
 | `delete_document` | `kbId`, `documentIds[]` | Batch delete |
 | `list_knowledge_bases` | `page?`, `size?`, `searchName?` | When engine set, only the engine's KBs |
-| `create_knowledge_base` | `name`, `description`, `embeddingModel`, … | — |
+| `create_knowledge_base` | `name`, `description`, `embeddingModel`, `llmModel?`, … | `llmModel` optional; valid values from `list_models(type=chat)` |
+| `update_knowledge_base` | `kbId`, `description?` | Update a knowledge base's description |
 | `get_knowledge_base` | `kbId` | — |
 | `delete_knowledge_base` | `kbId` | Fails if agents still use it |
+| `list_models` | `type?` | List active embedding/chat models (valid `embeddingModel`/`llmModel` for `create_knowledge_base`) |
 
 ```jsonc
 // 1) orient on the available knowledge bases
@@ -193,6 +199,7 @@ All config is via environment variables, read once at startup by `loadEnvConfig`
 | `MAX_GET_DOCUMENT_PAGES` | `10` | Max pages `get_document` will scan before giving up. |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error`. Logs go to **stderr** — never stdout, so stdio JSON-RPC is never corrupted. `debug` adds per-call backend traces. |
 | `BACKEND_TIMEOUT_MS` | `300000` | Hard timeout (ms) for each backend call (search, list, upload, …). On timeout the tool returns a `504`-style error instead of hanging forever. `0` disables. |
+| `DOWNLOAD_DIR` | system temp dir (`os.tmpdir()`) | Where `download_document` writes files over stdio. |
 
 > In **streamable HTTP** mode the token and engine are not read from env at all — clients supply them per request via `Authorization: Bearer` and `X-Engine`. `GREENNODE_RAG_TOKEN` / `TOKEN_ENV` / `ENGINE` apply only to stdio.
 

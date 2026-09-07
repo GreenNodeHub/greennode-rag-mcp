@@ -73,3 +73,20 @@ export async function cancelDocumentTool(deps: HandlerDeps, auth: AuthContext, a
   if (res.status >= 400) return httpError(res.status, res.body);
   return ok({ cancelled: args.documentId });
 }
+
+const DocumentMetadataEntry = z.object({
+  key: z.string(),
+  value: z.any(),
+  type: z.string().optional(),
+}).refine((d) => "value" in d, { message: "value is required" });
+
+export const UpdateDocumentMetadataInputSchema = {
+  kbId: KbId,
+  documentId: z.string(),
+  metadata: z.array(DocumentMetadataEntry).min(1),
+};
+export async function updateDocumentMetadataTool(deps: HandlerDeps, auth: AuthContext, args: { kbId: string; documentId: string; metadata: { key: string; value: unknown; type?: string }[] }): Promise<ToolResult> {
+  const res = await deps.backend({ method: "PATCH", path: `/knowledge-bases/${args.kbId}/documents/${args.documentId}/metadata`, body: { metadata: args.metadata }, bearerToken: auth.bearerToken });
+  if (res.status >= 400) return httpError(res.status, res.body);
+  return ok({ updated: args.documentId, count: args.metadata.length });
+}

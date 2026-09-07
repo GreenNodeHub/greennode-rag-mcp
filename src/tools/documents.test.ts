@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-import { listDocumentsTool, getDocumentTool, deleteDocumentTool, getIngestStatusTool, restartDocumentTool, cancelDocumentTool, ListDocumentsInputSchema, RestartDocumentInputSchema, CancelDocumentInputSchema } from "./documents.js";
+import { listDocumentsTool, getDocumentTool, deleteDocumentTool, getIngestStatusTool, restartDocumentTool, cancelDocumentTool, updateDocumentMetadataTool, ListDocumentsInputSchema, RestartDocumentInputSchema, CancelDocumentInputSchema, UpdateDocumentMetadataInputSchema } from "./documents.js";
 import type { BackendClient } from "../http/downstream.js";
 import type { EnvConfig } from "../config/env.js";
 
@@ -78,6 +78,28 @@ describe("cancelDocumentTool", () => {
   });
   it("rejects an invalid kbId", () => {
     const parsed = z.object(CancelDocumentInputSchema).safeParse({ kbId: "a/b", documentId: "d1" });
+    expect(parsed.success).toBe(false);
+  });
+});
+
+describe("updateDocumentMetadataTool", () => {
+  it("PATCHes metadata and returns synthetic ack", async () => {
+    const backend: BackendClient = async (req) => { expect(req.method).toBe("PATCH"); expect(req.path).toBe("/knowledge-bases/kb1/documents/d1/metadata"); expect(req.body).toEqual({ metadata: [{ key: "author", value: "sam", type: "string" }] }); return { status: 200, body: undefined }; };
+    const res = await updateDocumentMetadataTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1", documentId: "d1", metadata: [{ key: "author", value: "sam", type: "string" }] });
+    expect(JSON.parse(res.content[0].text)).toMatchObject({ updated: "d1", count: 1 });
+  });
+  it("returns httpError on 400 (doc not found)", async () => {
+    const backend: BackendClient = async () => ({ status: 400, body: { message: "document not found" } });
+    const res = await updateDocumentMetadataTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1", documentId: "d1", metadata: [{ key: "k", value: "v" }] });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/HTTP 400/);
+  });
+  it("rejects empty metadata array", () => {
+    const parsed = z.object(UpdateDocumentMetadataInputSchema).safeParse({ kbId: "kb1", documentId: "d1", metadata: [] });
+    expect(parsed.success).toBe(false);
+  });
+  it("rejects metadata entry missing key or value", () => {
+    const parsed = z.object(UpdateDocumentMetadataInputSchema).safeParse({ kbId: "kb1", documentId: "d1", metadata: [{ key: "k" }] });
     expect(parsed.success).toBe(false);
   });
 });

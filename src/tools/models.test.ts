@@ -12,24 +12,24 @@ const embedModels = [{ uuid: "u-emb", path: "text-embedding-3", isEnabled: true,
 describe("listModelsTool", () => {
   it("type=all merges chat + embedding into an object", async () => {
     const backend: BackendClient = async (req) => { expect(req.path).toBe("/models"); expect(req.query!.type).toMatch(/^(chat|embedding)$/); return { status: 200, body: req.query!.type === "chat" ? chatModels : embedModels }; };
-    const res = await listModelsTool({ config, backend }, { bearerToken: "t" }, {});
+    const res = await listModelsTool({ config, backend, ragAgent: backend, scope: { kbIds: null } }, { bearerToken: "t" }, {});
     const body = JSON.parse(res.content[0].text);
     expect(body.chat).toEqual(chatModels);
     expect(body.embedding).toEqual(embedModels);
   });
   it("type=chat issues a single call and returns a list", async () => {
     const backend: BackendClient = async (req) => { expect(req.query).toMatchObject({ type: "chat" }); return { status: 200, body: chatModels }; };
-    const res = await listModelsTool({ config, backend }, { bearerToken: "t" }, { type: "chat" });
+    const res = await listModelsTool({ config, backend, ragAgent: backend, scope: { kbIds: null } }, { bearerToken: "t" }, { type: "chat" });
     expect(JSON.parse(res.content[0].text)).toEqual(chatModels);
   });
   it("type=embedding issues a single call", async () => {
     const backend: BackendClient = async (req) => { expect(req.query).toMatchObject({ type: "embedding" }); return { status: 200, body: embedModels }; };
-    const res = await listModelsTool({ config, backend }, { bearerToken: "t" }, { type: "embedding" });
+    const res = await listModelsTool({ config, backend, ragAgent: backend, scope: { kbIds: null } }, { bearerToken: "t" }, { type: "embedding" });
     expect(JSON.parse(res.content[0].text)).toEqual(embedModels);
   });
   it("returns httpError on 4xx", async () => {
     const backend: BackendClient = async () => ({ status: 400, body: { message: "bad" } });
-    const res = await listModelsTool({ config, backend }, { bearerToken: "t" }, { type: "chat" });
+    const res = await listModelsTool({ config, backend, ragAgent: backend, scope: { kbIds: null } }, { bearerToken: "t" }, { type: "chat" });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toMatch(/HTTP 400/);
   });
@@ -38,7 +38,7 @@ describe("listModelsTool", () => {
       if (req.query?.type === "chat") return { status: 400, body: { message: "bad" } };
       return { status: 200, body: embedModels };
     };
-    const res = await listModelsTool({ config, backend }, { bearerToken: "t" }, {});
+    const res = await listModelsTool({ config, backend, ragAgent: backend, scope: { kbIds: null } }, { bearerToken: "t" }, {});
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toMatch(/HTTP 400/);
   });

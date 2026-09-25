@@ -7,7 +7,7 @@ import type { BackendClient } from "../http/downstream.js";
 import type { EnvConfig } from "../config/env.js";
 
 const config = {
-  backendUrl: "x", transport: "stdio", port: 8080, tokenEnv: "T",
+  backendUrl: "x", ragAgentUrl: "x", transport: "stdio", port: 8080, tokenEnv: "T",
   maxResponseBytes: 25000, defaultPageSize: 10, maxGetDocumentPages: 10,
   logLevel: "info" as const, backendTimeoutMs: 300000,
   maxIngestFileBytes: 104_857_600, allowedExtensions: ["pdf", "txt", "png"], allowedRoots: [],
@@ -35,7 +35,7 @@ describe("ingestFileTool", () => {
       expect(await part.text()).toBe("hello world");
       return { status: 200, body: { id: "doc-1", name: "report.txt", uploadType: "custom", status: "ACTIVE" } };
     };
-    const res = await ingestFileTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1", path });
+    const res = await ingestFileTool({ config, backend, ragAgent: backend, scope: { kbIds: null } }, { bearerToken: "t" }, { kbId: "kb1", path });
     expect(res.isError).toBeUndefined();
     expect(JSON.parse(res.content[0].text)).toMatchObject({ id: "doc-1" });
   });
@@ -48,13 +48,13 @@ describe("ingestFileTool", () => {
       expect(part.type).toBe("application/octet-stream");
       return { status: 200, body: { id: "d" } };
     };
-    const res = await ingestFileTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1", path });
+    const res = await ingestFileTool({ config, backend, ragAgent: backend, scope: { kbIds: null } }, { bearerToken: "t" }, { kbId: "kb1", path });
     expect(res.isError).toBeUndefined();
   });
 
   it("fails when the file does not exist", async () => {
     const backend: BackendClient = async () => ({ status: 200, body: {} });
-    const res = await ingestFileTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1", path: join(dir, "nope.txt") });
+    const res = await ingestFileTool({ config, backend, ragAgent: backend, scope: { kbIds: null } }, { bearerToken: "t" }, { kbId: "kb1", path: join(dir, "nope.txt") });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toMatch(/could not read file/);
   });
@@ -63,7 +63,7 @@ describe("ingestFileTool", () => {
     const path = await write("big.txt", "0123456789");
     const cfg = { ...config, maxIngestFileBytes: 3 } as EnvConfig;
     const backend: BackendClient = async () => ({ status: 200, body: {} });
-    const res = await ingestFileTool({ config: cfg, backend }, { bearerToken: "t" }, { kbId: "kb1", path });
+    const res = await ingestFileTool({ config: cfg, backend, ragAgent: backend, scope: { kbIds: null } }, { bearerToken: "t" }, { kbId: "kb1", path });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toMatch(/exceeds max/);
   });
@@ -71,7 +71,7 @@ describe("ingestFileTool", () => {
   it("fails when the extension is not allowed", async () => {
     const path = await write("secret.env", "KEY=val");
     const backend: BackendClient = async () => ({ status: 200, body: {} });
-    const res = await ingestFileTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1", path });
+    const res = await ingestFileTool({ config, backend, ragAgent: backend, scope: { kbIds: null } }, { bearerToken: "t" }, { kbId: "kb1", path });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toMatch(/extension .* not allowed/);
   });
@@ -80,7 +80,7 @@ describe("ingestFileTool", () => {
     const path = await write("inside.txt", "x");
     const cfg = { ...config, allowedRoots: ["/definitely/not/a/real/root"] } as EnvConfig;
     const backend: BackendClient = async () => ({ status: 200, body: {} });
-    const res = await ingestFileTool({ config: cfg, backend }, { bearerToken: "t" }, { kbId: "kb1", path });
+    const res = await ingestFileTool({ config: cfg, backend, ragAgent: backend, scope: { kbIds: null } }, { bearerToken: "t" }, { kbId: "kb1", path });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toMatch(/outside allowed roots/);
   });
@@ -88,7 +88,7 @@ describe("ingestFileTool", () => {
   it("returns httpError on backend 4xx", async () => {
     const path = await write("ok.txt", "x");
     const backend: BackendClient = async () => ({ status: 400, body: { message: "bad kb" } });
-    const res = await ingestFileTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1", path });
+    const res = await ingestFileTool({ config, backend, ragAgent: backend, scope: { kbIds: null } }, { bearerToken: "t" }, { kbId: "kb1", path });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toMatch(/HTTP 400/);
   });
@@ -97,7 +97,7 @@ describe("ingestFileTool", () => {
     const dirPath = join(dir, "subdir.txt");
     await mkdir(dirPath);
     const backend: BackendClient = async () => ({ status: 200, body: {} });
-    const res = await ingestFileTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1", path: dirPath });
+    const res = await ingestFileTool({ config, backend, ragAgent: backend, scope: { kbIds: null } }, { bearerToken: "t" }, { kbId: "kb1", path: dirPath });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toMatch(/not a file/);
   });
@@ -110,7 +110,7 @@ describe("ingestFileTool", () => {
     await symlink(outside, link);
     const cfg = { ...config, allowedRoots: [linkDir] } as EnvConfig;
     const backend: BackendClient = async () => ({ status: 200, body: {} });
-    const res = await ingestFileTool({ config: cfg, backend }, { bearerToken: "t" }, { kbId: "kb1", path: link });
+    const res = await ingestFileTool({ config: cfg, backend, ragAgent: backend, scope: { kbIds: null } }, { bearerToken: "t" }, { kbId: "kb1", path: link });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toMatch(/outside allowed roots/);
   });
@@ -126,7 +126,7 @@ describe("ingestFilesTool", () => {
       expect(parts.map((p) => p.name).sort()).toEqual(["a.txt", "b.txt"]);
       return { status: 200, body: [{ id: "d1" }, { id: "d2" }] };
     };
-    const res = await ingestFilesTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1", files: [{ path: a }, { path: b }] });
+    const res = await ingestFilesTool({ config, backend, ragAgent: backend, scope: { kbIds: null } }, { bearerToken: "t" }, { kbId: "kb1", files: [{ path: a }, { path: b }] });
     expect(res.isError).toBeUndefined();
     expect(JSON.parse(res.content[0].text)).toHaveLength(2);
   });

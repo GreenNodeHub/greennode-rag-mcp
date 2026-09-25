@@ -17,11 +17,11 @@ describe("stdio smoke", () => {
     const r = run({ BACKEND_URL: "https://x" });
     expect(r.status).not.toBe(0);
   });
-  it("lists 19 tools with token", () => {
+  it("lists 21 tools with token (basic + management, no engine)", () => {
     const r = run({ BACKEND_URL: "https://x", GREENNODE_RAG_TOKEN: "tok" });
     expect(r.status).toBe(0);
     const lines = r.stdout.split("\n").filter(Boolean);
     const toolsList = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).find((m) => m?.id === 2);
-    expect(toolsList?.result?.tools?.length).toBe(19);
+    expect(toolsList?.result?.tools?.length).toBe(21);
   });
 });

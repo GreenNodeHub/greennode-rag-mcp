@@ -1,6 +1,6 @@
 # greennode-rag-mcp
 
-An MCP server that exposes the GreenNode RAG REST APIs (knowledge bases, documents, search, ingest) as **19 tools**. It proxies `agent-platform-api` via its public gateway with pass-through OAuth bearer auth and optional `engine` (agent name) scoping. Runs locally over **stdio** (default) or remotely over **streamable HTTP**, with any MCP-speaking client.
+An MCP server that exposes the GreenNode RAG REST APIs as **dataplane + management tools**. Over **stdio** (default) it exposes the full surface (search, ingest, KB management). Over **streamable HTTP** it exposes only the retrieval dataplane (search, summarize, source introspection) — no upload or management tools. It proxies `agent-platform-api` via its public gateway with pass-through OAuth bearer auth and optional `engine` (agent name) scoping. Runs locally over **stdio** (default) or remotely over **streamable HTTP**, with any MCP-speaking client.
 
 ## Table of contents
 
@@ -73,30 +73,53 @@ The server exposes 19 tools that map onto the `agent-platform-api` RAG endpoints
                           ▼
 ┌───────────────────────────────────────────────────────────────┐
 │  greennode-rag-mcp  (hand-written TypeScript)                 │
-│    • 19 tools: search, ingest_*, documents, knowledge_bases   │
+│    • basic: health_check, list_sources, describe_source,      │
+│      get_document                                             │
+│    • advanced (engine-gated): search, summarize               │
+│    • management (stdio-only): ingest_*, documents, KB CRUD    │
+│    • engine precheck: ENGINE / X-Engine → GET /agents         │
 │    • inbound auth: env token (stdio) / Authorization header   │
-│    • engine scoping: ENGINE env / X-Engine header → KB ids    │
-│    • list-response truncation (MAX_RESPONSE_BYTES)            │
 └───────────────────────────────────────────────────────────────┘
-                          ▼  pass-through OAuth bearer
-┌───────────────────────────────────────────────────────────────┐
-│  agent-platform-api gateway  (BACKEND_URL)                    │
-│    validates bearer, injects ownership — MCP never sees it    │
-└───────────────────────────────────────────────────────────────┘
+        ▼ pass-through OAuth bearer
+┌──────────────────────────────┐  ┌──────────────────────────────┐
+│  agent-platform-api          │  │  rag-agent                   │
+│  (BACKEND_URL)               │  │  (RAG_AGENT_URL)             │
+│  list_sources, get_document  │  │  search, describe_source,    │
+│  engine precheck             │  │  summarize                   │
+└──────────────────────────────┘  └──────────────────────────────┘
 ```
 
-### Tools (19)
+### Tools
+
+Tools are split into three tiers. The transport and engine precheck determine which are registered:
+
+| Tier | Tools | When registered |
+|---|---|---|
+| **Basic** (dataplane) | `health_check`, `list_sources`, `describe_source`, `get_document` | Always |
+| **Advanced** (dataplane) | `search`, `summarize` | Only when `ENGINE` is set and precheck passes |
+| **Management** | `ingest_*`, `list_documents`, `delete_document`, `restart_document`, `cancel_document`, `download_document`, `update_document_metadata`, `list/create/update/get/delete_knowledge_base`, `list_models`, `get_ingest_status` | Only over stdio (`TRANSPORT=stdio`) |
+
+**Dataplane tools (search-related):**
 
 | Tool | Key args | Notes |
 |---|---|---|
-| `search` | `question`, `filters?` | Semantic search over in-scope KB(s); returns chunks `{content, documentId, similarity}` |
+| `health_check` | — | Server status, version, approximate doc count |
+| `list_sources` | `page?`, `size?`, `searchName?` | List knowledge bases with doc counts + metadata schemas |
+| `describe_source` | `source_id` | Filterable metadata fields, taxonomy, doc statistics for a KB |
+| `search` | `query`, `top_k?`, `min_score?`, `filters?`, `mode?`, `rerank?` | Hybrid/semantic/keyword search; returns snippets (not full content), chunk IDs, token estimates |
+| `summarize` | `kb_id`, `query`, `chunk_ids[]`, `max_tokens?`, `format?` | Server-side synthesis over selected chunks; returns compressed answer + citations |
+| `get_document` | `kbId`, `documentId`, `maxPages?` | Fetch document metadata (lists client-side; bounded by `maxPages`) |
+
+**Management tools (stdio only):**
+
+| Tool | Key args | Notes |
+|---|---|---|
 | `ingest_document` | `kbId`, `filename`, `content` ∣ `data` (base64), `mimeType?` | One file; async — poll `get_ingest_status` |
 | `ingest_batch` | `kbId`, `documents[]` | Multiple files in one call |
 | `ingest_file` | `kbId`, `path`, `filename?`, `mimeType?` | Read one local file by path → multipart (no base64); stdio local |
 | `ingest_files` | `kbId`, `files[]` | Multiple files by path in one call |
 | `get_ingest_status` | `kbId`, `documentId?` | Poll KB + document ingest status |
 | `list_documents` | `kbId`, `page?`, `size?` | Paginated |
-| `get_document` | `kbId`, `documentId`, `maxPages?` | Lists client-side; bounded by `maxPages` |
 | `restart_document` | `kbId`, `documentId` | Restart (re-parse) a document; returns `{jobIds}` |
 | `cancel_document` | `kbId`, `documentId` | Cancel an in-flight document parse |
 | `download_document` | `kbId`, `documentId` | Transport-aware: stdio writes to disk, http returns base64 |
@@ -107,7 +130,7 @@ The server exposes 19 tools that map onto the `agent-platform-api` RAG endpoints
 | `update_knowledge_base` | `kbId`, `description?` | Update a knowledge base's description |
 | `get_knowledge_base` | `kbId` | — |
 | `delete_knowledge_base` | `kbId` | Fails if agents still use it |
-| `list_models` | `type?` | List active embedding/chat models (valid `embeddingModel`/`llmModel` for `create_knowledge_base`) |
+| `list_models` | `type?` | List active embedding/chat models |
 
 ```jsonc
 // 1) orient on the available knowledge bases
@@ -188,11 +211,11 @@ All config is via environment variables, read once at startup by `loadEnvConfig`
 
 | Var | Default | Notes |
 |---|---|---|
-| `BACKEND_URL` | `https://agent-rag.api.vngcloud.vn` | Backend base URL. Optional — defaults to **prod**. Set to `https://aiplatform.console-dev.vngcloud.tech/agent-api` for dev. |
-| `TRANSPORT` | `stdio` | `stdio` or `http`. Any other value throws at boot — the process exits non-zero, nothing listens. |
+| `BACKEND_URL` | `https://agent-rag.api.vngcloud.vn` | agent-platform-api base URL. Optional — defaults to **prod**. |
+| `RAG_AGENT_URL` | — | rag-agent base URL for dataplane calls (search, describe_source, summarize). Falls back to `BACKEND_URL` if unset. |\n| `TRANSPORT` | `stdio` | `stdio` or `http`. Any other value throws at boot — the process exits non-zero, nothing listens. |
 | `GREENNODE_RAG_TOKEN` | — | Upstream OAuth bearer, **stdio only**. Forwarded to the gateway on every call. |
 | `TOKEN_ENV` | `GREENNODE_RAG_TOKEN` | Name of the env var that holds the token, **stdio only**. Set this to read the token from a differently-named var. |
-| `ENGINE` | — | Optional RAG engine / agent name, **stdio only**. Scopes `search` + `list_knowledge_bases` to that engine's KBs. |
+| `ENGINE` | — | RAG engine / agent name. Gates advanced tools (`search`, `summarize`) — prechecked at startup. **stdio**: env var; **http**: `X-Engine` header. |
 | `PORT` | `8080` | HTTP transport listen port. |
 | `MAX_RESPONSE_BYTES` | `25000` | Hard cap on list responses; over-cap responses are truncated with a notice. |
 | `DEFAULT_PAGE_SIZE` | `10` | Default `size` for `list_documents` / `list_knowledge_bases`. |

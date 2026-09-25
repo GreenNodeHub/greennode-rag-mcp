@@ -3,7 +3,7 @@ import type { HandlerDeps } from "./types.js";
 import type { AuthContext } from "../auth/inbound.js";
 import type { ToolResult } from "../util/result.js";
 import { ok, okList, httpError, fail } from "../util/result.js";
-import { resolveSearchScope } from "../scope.js";
+import { precheckEngine } from "../scope.js";
 import { KbId } from "../schema/backend.js";
 import { itemsOf } from "../util/list.js";
 
@@ -16,9 +16,9 @@ export const ListKnowledgeBasesInputSchema = {
 };
 export async function listKnowledgeBasesTool(deps: HandlerDeps, auth: AuthContext, args: { page?: number; size?: number; searchName?: string; sortBy?: string; sortDirection?: string }): Promise<ToolResult> {
   if (auth.engine) {
-    const scope = await resolveSearchScope(auth, deps);
-    if (!scope.ok) return scope.result;
-    const allowed = new Set(scope.kbIds);
+    const precheck = await precheckEngine(auth, { backend: deps.backend });
+    if (!precheck.ok) return precheck.result;
+    const allowed = new Set(precheck.scope.kbIds ?? []);
     const res = await deps.backend({ method: "GET", path: "/knowledge-bases", query: { page: 1, size: 100 }, bearerToken: auth.bearerToken });
     if (res.status >= 400) return httpError(res.status, res.body);
     return okList(itemsOf(res.body).filter((k: any) => allowed.has(k?.id)), deps.config.maxResponseBytes);

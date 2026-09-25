@@ -14,12 +14,12 @@ describe("ingestDocumentTool", () => {
       expect((req.form as FormData).get("files")).toBeInstanceOf(File);
       return { status: 200, body: { id: "doc-1", name: "a.txt", uploadType: "custom", status: "ACTIVE", createdAt: "2026-01-01" } };
     };
-    const res = await ingestDocumentTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1", filename: "a.txt", content: "hello" });
+    const res = await ingestDocumentTool({ config, backend, ragAgent: backend, scope: { kbIds: null } }, { bearerToken: "t" }, { kbId: "kb1", filename: "a.txt", content: "hello" });
     expect(JSON.parse(res.content[0].text)).toMatchObject({ id: "doc-1" });
   });
   it("rejects when neither content nor data", async () => {
     const backend: BackendClient = async () => ({ status: 200, body: {} });
-    const res = await ingestDocumentTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1", filename: "a.txt" } as any);
+    const res = await ingestDocumentTool({ config, backend, ragAgent: backend, scope: { kbIds: null } }, { bearerToken: "t" }, { kbId: "kb1", filename: "a.txt" } as any);
     expect(res.isError).toBe(true);
   });
 });
@@ -31,7 +31,7 @@ describe("ingestBatchTool", () => {
       expect(form.getAll("files").length).toBe(2);
       return { status: 200, body: [{ id: "d1", name: "a", uploadType: "custom", status: "ACTIVE", createdAt: "x" }, { id: "d2", name: "b", uploadType: "custom", status: "ACTIVE", createdAt: "x" }] };
     };
-    const res = await ingestBatchTool({ config, backend }, { bearerToken: "t" }, { kbId: "kb1", documents: [{ filename: "a.txt", content: "1" }, { filename: "b.txt", content: "2" }] });
+    const res = await ingestBatchTool({ config, backend, ragAgent: backend, scope: { kbIds: null } }, { bearerToken: "t" }, { kbId: "kb1", documents: [{ filename: "a.txt", content: "1" }, { filename: "b.txt", content: "2" }] });
     expect(JSON.parse(res.content[0].text)).toHaveLength(2);
   });
 });

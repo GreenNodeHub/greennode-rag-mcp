@@ -2,7 +2,16 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { HandlerDeps } from "./types.js";
 import type { AuthContext } from "../auth/inbound.js";
 import type { Transport } from "../config/env.js";
+
+// ---- Dataplane: basic tier (no engine required) ----
+import { healthCheckTool, HealthCheckInputSchema } from "./healthCheck.js";
+import { listSourcesTool, describeSourceTool, ListSourcesInputSchema, DescribeSourceInputSchema } from "./sources.js";
+
+// ---- Dataplane: advanced tier (engine required) ----
 import { searchTool, SearchInputSchema } from "./search.js";
+import { summarizeTool, SummarizeInputSchema } from "./summarize.js";
+
+// ---- Management tools (stdio only) ----
 import { ingestDocumentTool, ingestBatchTool, IngestDocumentInputSchema, IngestBatchInputSchema } from "./ingest.js";
 import { ingestFileTool, ingestFilesTool, IngestFileInputSchema, IngestFilesInputSchema } from "./ingestFile.js";
 import { listDocumentsTool, getDocumentTool, deleteDocumentTool, getIngestStatusTool, ListDocumentsInputSchema, GetDocumentInputSchema, DeleteDocumentInputSchema, GetIngestStatusInputSchema } from "./documents.js";
@@ -40,11 +49,11 @@ function ingestFileDescription(transport: Transport): string {
 }
 
 function ingestFilesDescription(transport: Transport): string {
-  const base = "Upload multiple files into a knowledge base in one call by reading them from disk by path — no base64 encoding needed.";
+  const base = "Upload multiple files into a knowledge base in one call by reading them from disk by path — no base64 encoding needed. The server reads each file, builds multipart/form-data, and POSTs it.";
   if (transport === "stdio") {
-    return base + " stdio (local server): pass an absolute or CWD-relative path per file." + INGEST_FLOW;
+    return base + " You are connected over stdio, so the server runs locally and can read paths on your disk. Pass absolute paths or ones relative to the server's CWD." + INGEST_FLOW;
   }
-  return base + " HTTP (remote server): each path must be readable on the server's filesystem (e.g. a shared volume), not your laptop's; otherwise run locally over stdio." + INGEST_FLOW;
+  return base + " You are connected over streamable HTTP, so the server is REMOTE — paths must be readable on the server's filesystem (e.g. a shared volume), not your laptop's; otherwise run locally over stdio." + INGEST_FLOW;
 }
 
 function downloadDocumentDescription(transport: Transport): string {
@@ -55,18 +64,30 @@ function downloadDocumentDescription(transport: Transport): string {
   return base + " You are connected over streamable HTTP, so the server is REMOTE. It returns the bytes base64-encoded in {filename, size, contentType, contentBase64}, capped at maxResponseBytes (oversized files are truncated — download over stdio for the full file). For large files, prefer running the server locally over stdio.";
 }
 
-export function registerTools(server: McpServer, deps: HandlerDeps, auth: AuthContext): void {
+export function registerBasicTools(server: McpServer, deps: HandlerDeps, auth: AuthContext): void {
+  const h = <A,>(fn: (d: HandlerDeps, a: AuthContext, args: A) => Promise<any>) => (async (args: A) => fn(deps, auth, args)) as any;
+  server.registerTool("health_check", { description: "Check server health: status, version, and approximate doc count.", inputSchema: HealthCheckInputSchema }, h(healthCheckTool));
+  server.registerTool("list_sources", { description: "List knowledge bases (sources) with doc counts and metadata schemas. Paginated.", inputSchema: ListSourcesInputSchema }, h(listSourcesTool));
+  server.registerTool("describe_source", { description: "Describe a knowledge base: filterable metadata fields, taxonomy, and doc statistics.", inputSchema: DescribeSourceInputSchema }, h(describeSourceTool));
+  server.registerTool("get_document", { description: "Fetch a document by id (lists client-side; bounded by maxPages).", inputSchema: GetDocumentInputSchema }, h(getDocumentTool));
+}
+
+export function registerAdvancedTools(server: McpServer, deps: HandlerDeps, auth: AuthContext): void {
+  const h = <A,>(fn: (d: HandlerDeps, a: AuthContext, args: A) => Promise<any>) => (async (args: A) => fn(deps, auth, args)) as any;
+  server.registerTool("search", { description: "Semantic/keyword/hybrid search over the engine's knowledge bases. Returns snippets (not full content), scores, chunk IDs, and token estimates for context budgeting.", inputSchema: SearchInputSchema }, h(searchTool));
+  server.registerTool("summarize", { description: "Server-side synthesis over selected chunks. Returns a compressed answer aligned to the query, with citations and confidence. Avoids pulling raw content into context.", inputSchema: SummarizeInputSchema }, h(summarizeTool));
+}
+
+export function registerManagementTools(server: McpServer, deps: HandlerDeps, auth: AuthContext): void {
   const h = <A,>(fn: (d: HandlerDeps, a: AuthContext, args: A) => Promise<any>) => (async (args: A) => fn(deps, auth, args)) as any;
   const transport = deps.config.transport;
 
-  server.registerTool("search", { description: "Semantic search over the in-scope knowledge base(s) (engine's KBs, or all account KBs). Returns chunks {content, documentId, similarity}.", inputSchema: SearchInputSchema }, h(searchTool));
   server.registerTool("ingest_document", { description: ingestDocumentDescription(transport), inputSchema: IngestDocumentInputSchema }, h(ingestDocumentTool));
   server.registerTool("ingest_batch", { description: ingestBatchDescription(transport), inputSchema: IngestBatchInputSchema }, h(ingestBatchTool));
   server.registerTool("ingest_file", { description: ingestFileDescription(transport), inputSchema: IngestFileInputSchema }, h(ingestFileTool));
   server.registerTool("ingest_files", { description: ingestFilesDescription(transport), inputSchema: IngestFilesInputSchema }, h(ingestFilesTool));
   server.registerTool("get_ingest_status", { description: "Poll KB + document ingest status (async pair for ingest_document/ingest_batch).", inputSchema: GetIngestStatusInputSchema }, h(getIngestStatusTool));
   server.registerTool("delete_document", { description: "Delete one or more documents from a knowledge base (batch).", inputSchema: DeleteDocumentInputSchema }, h(deleteDocumentTool));
-  server.registerTool("get_document", { description: "Fetch a document by id (lists client-side; bounded by maxPages).", inputSchema: GetDocumentInputSchema }, h(getDocumentTool));
   server.registerTool("list_documents", { description: "List documents in a knowledge base (paginated).", inputSchema: ListDocumentsInputSchema }, h(listDocumentsTool));
   server.registerTool("restart_document", { description: "Restart (re-parse) a document: wipes vectors and re-embeds. Returns {jobIds}. Async — afterwards call get_ingest_status(kbId, documentId) and poll until ACTIVE.", inputSchema: RestartDocumentInputSchema }, h(restartDocumentTool));
   server.registerTool("cancel_document", { description: "Cancel an in-flight document parse. The document ends in 'failed'; no embedding occurs.", inputSchema: CancelDocumentInputSchema }, h(cancelDocumentTool));

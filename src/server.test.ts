@@ -5,17 +5,22 @@ import { createMcpServer } from "./server.js";
 import { VERSION } from "./version.js";
 import { createBackendClient } from "./http/downstream.js";
 import type { EnvConfig } from "./config/env.js";
+import type { ResolvedScope } from "./scope.js";
 
-const config = { backendUrl: "https://x", transport: "stdio", port: 8080, tokenEnv: "T", maxResponseBytes: 25000, defaultPageSize: 10, maxGetDocumentPages: 10 } as EnvConfig;
+const config = { backendUrl: "https://x", ragAgentUrl: "https://x", transport: "stdio", port: 8080, tokenEnv: "T", maxResponseBytes: 25000, defaultPageSize: 10, maxGetDocumentPages: 10 } as EnvConfig;
 const httpConfig = { ...config, transport: "http" } as EnvConfig;
 
 function fakeFetch(): any {
   return async () => ({ status: 200, text: async () => '{"items":[]}', headers: { get: () => "application/json" } });
 }
 
-async function toolNames(cfg: EnvConfig): Promise<Record<string, string>> {
-  const deps = { config: cfg, backend: createBackendClient("https://x", fakeFetch()) };
-  const server = createMcpServer(deps, { bearerToken: "t" });
+const scopeWithKbs: ResolvedScope = { engine: "eng", kbIds: ["kb-1"] };
+const scopeBasic: ResolvedScope = { engine: undefined, kbIds: null };
+
+async function toolNames(cfg: EnvConfig, scope: ResolvedScope = scopeWithKbs): Promise<Record<string, string>> {
+  const backend = createBackendClient("https://x", fakeFetch());
+  const deps = { config: cfg, backend, ragAgent: backend };
+  const server = createMcpServer(deps, { bearerToken: "t" }, scope);
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test", version: "1" });
   await Promise.all([server.connect(serverT), client.connect(clientT)]);
@@ -24,41 +29,72 @@ async function toolNames(cfg: EnvConfig): Promise<Record<string, string>> {
 }
 
 describe("createMcpServer", () => {
-  it("exposes exactly 19 tools", async () => {
-    const byName = await toolNames(config);
-    expect(Object.keys(byName).sort()).toEqual([
-      "cancel_document", "create_knowledge_base", "delete_document", "delete_knowledge_base", "download_document",
-      "get_document", "get_ingest_status", "get_knowledge_base", "ingest_batch", "ingest_document", "ingest_file",
-      "ingest_files", "list_documents", "list_knowledge_bases", "list_models", "restart_document", "search",
-      "update_document_metadata", "update_knowledge_base",
-    ]);
+  it("stdio + engine: exposes basic + advanced + management tools", async () => {
+    const byName = await toolNames(config, scopeWithKbs);
+    const names = Object.keys(byName).sort();
+    // Basic: health_check, list_sources, describe_source, get_document
+    // Advanced: search, summarize
+    // Management: 16 tools
+    expect(names).toContain("health_check");
+    expect(names).toContain("list_sources");
+    expect(names).toContain("describe_source");
+    expect(names).toContain("search");
+    expect(names).toContain("summarize");
+    expect(names).toContain("ingest_document");
+    expect(names).toContain("list_knowledge_bases");
+    expect(names).toContain("list_models");
   });
 
-  it("ingest_document description is transport-aware and prescriptive", async () => {
-    const stdio = (await toolNames(config)).ingest_document;
-    const http = (await toolNames(httpConfig)).ingest_document;
-    // stdio: local server — tell the agent to read from disk + base64
+  it("stdio + no engine: exposes basic + management only (no search/summarize)", async () => {
+    const byName = await toolNames(config, scopeBasic);
+    const names = Object.keys(byName);
+    expect(names).toContain("health_check");
+    expect(names).toContain("list_sources");
+    expect(names).not.toContain("search");
+    expect(names).not.toContain("summarize");
+    expect(names).toContain("ingest_document");
+  });
+
+  it("http + engine: exposes basic + advanced only (no management tools)", async () => {
+    const byName = await toolNames(httpConfig, scopeWithKbs);
+    const names = Object.keys(byName);
+    expect(names).toContain("health_check");
+    expect(names).toContain("search");
+    expect(names).toContain("summarize");
+    expect(names).not.toContain("ingest_document");
+    expect(names).not.toContain("list_knowledge_bases");
+    expect(names).not.toContain("list_models");
+  });
+
+  it("http + no engine: exposes basic only", async () => {
+    const byName = await toolNames(httpConfig, scopeBasic);
+    const names = Object.keys(byName);
+    expect(names).toContain("health_check");
+    expect(names).toContain("list_sources");
+    expect(names).not.toContain("search");
+    expect(names).not.toContain("ingest_document");
+  });
+
+  it("ingest_document description is transport-aware (stdio only — not registered on http)", async () => {
+    const stdio = (await toolNames(config, scopeWithKbs)).ingest_document;
     expect(stdio).toMatch(/runs locally on your machine/);
     expect(stdio).toMatch(/read the file from disk/);
     expect(stdio).toMatch(/base64-encode/);
-    // http: remote server — tell the agent to check size and stop if large
-    expect(http).toMatch(/REMOTE and cannot read your disk/);
-    expect(http).toMatch(/check the file size/);
-    expect(http).toMatch(/STOP and do NOT inline/);
-    expect(http).toMatch(/run this MCP server locally over stdio/);
+    const httpNames = await toolNames(httpConfig, scopeWithKbs);
+    expect(httpNames.ingest_document).toBeUndefined();
   });
 
-  it("download_document description is transport-aware", async () => {
-    const stdio = (await toolNames(config)).download_document;
-    const http = (await toolNames(httpConfig)).download_document;
+  it("download_document description is transport-aware (stdio only — not registered on http)", async () => {
+    const stdio = (await toolNames(config, scopeWithKbs)).download_document;
     expect(stdio).toMatch(/writes the file to disk/);
-    expect(http).toMatch(/base64/);
-    expect(http).toMatch(/REMOTE|remote/);
+    const httpNames = await toolNames(httpConfig, scopeWithKbs);
+    expect(httpNames.download_document).toBeUndefined();
   });
 
   it("advertises the package.json version, not the stale 0.1.3", async () => {
-    const deps = { config, backend: createBackendClient("https://x", fakeFetch()) };
-    const server = createMcpServer(deps, { bearerToken: "t" });
+    const backend = createBackendClient("https://x", fakeFetch());
+    const deps = { config, backend, ragAgent: backend };
+    const server = createMcpServer(deps, { bearerToken: "t" }, scopeWithKbs);
     const [clientT, serverT] = InMemoryTransport.createLinkedPair();
     const client = new Client({ name: "test", version: "1" });
     await Promise.all([server.connect(serverT), client.connect(clientT)]);

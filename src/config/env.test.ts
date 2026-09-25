@@ -11,7 +11,7 @@ describe("loadEnvConfig", () => {
   });
   it("applies defaults", () => {
     const cfg = loadEnvConfig({ BACKEND_URL: "https://x" });
-    expect(cfg).toMatchObject({ backendUrl: "https://x", transport: "stdio", port: 8080, tokenEnv: "GREENNODE_RAG_TOKEN", maxResponseBytes: 25000, defaultPageSize: 10, maxGetDocumentPages: 10, logLevel: "info", backendTimeoutMs: 300000, maxIngestFileBytes: 104_857_600, allowedRoots: [] });
+    expect(cfg).toMatchObject({ backendUrl: "https://x", ragAgentUrl: "", transport: "stdio", port: 8080, tokenEnv: "GREENNODE_RAG_TOKEN", maxResponseBytes: 25000, defaultPageSize: 10, maxGetDocumentPages: 10, logLevel: "info", backendTimeoutMs: 300000, maxIngestFileBytes: 104_857_600, allowedRoots: [] });
   });
   it("parses LOG_LEVEL and BACKEND_TIMEOUT_MS (0 disables)", () => {
     const cfg = loadEnvConfig({ BACKEND_URL: "https://x", LOG_LEVEL: "debug", BACKEND_TIMEOUT_MS: "0" });
@@ -45,6 +45,11 @@ describe("loadEnvConfig", () => {
   it("defaults downloadDir to os.tmpdir()", () => {
     const cfg = loadEnvConfig({ BACKEND_URL: "https://x" });
     expect(cfg.downloadDir).toBe(require("node:os").tmpdir());
+  });
+
+  it("reads RAG_AGENT_URL", () => {
+    const cfg = loadEnvConfig({ BACKEND_URL: "https://x", RAG_AGENT_URL: "https://rag-agent" });
+    expect(cfg.ragAgentUrl).toBe("https://rag-agent");
   });
   it("reads DOWNLOAD_DIR", () => {
     const cfg = loadEnvConfig({ BACKEND_URL: "https://x", DOWNLOAD_DIR: "/tmp/downloads" });

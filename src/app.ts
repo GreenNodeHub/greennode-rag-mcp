@@ -2,14 +2,11 @@ import express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { authenticate, AuthError, type AuthContext } from "./auth/inbound.js";
 import { createMcpServer } from "./server.js";
+import { precheckEngine } from "./scope.js";
 import type { EnvConfig } from "./config/env.js";
 import type { BackendClient } from "./http/downstream.js";
 
-export interface AppDeps { config: EnvConfig; backend: BackendClient; }
-
-export function buildServer(deps: AppDeps, auth: AuthContext) {
-  return createMcpServer(deps, auth);
-}
+export interface AppDeps { config: EnvConfig; backend: BackendClient; ragAgent: BackendClient; }
 
 export function createApp(deps: AppDeps): express.Express {
   const app = express();
@@ -24,7 +21,12 @@ export function createApp(deps: AppDeps): express.Express {
       res.status(err.status ?? 401).json({ error: err.message });
       return;
     }
-    const server = buildServer(deps, auth);
+    const precheck = await precheckEngine(auth, { backend: deps.backend });
+    if (!precheck.ok) {
+      res.status(403).json({ error: { code: "ENGINE_NOT_FOUND", message: `engine not found: ${auth.engine}` } });
+      return;
+    }
+    const server = createMcpServer(deps, auth, precheck.scope);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on("close", () => { transport.close(); server.close(); });
     await server.connect(transport);

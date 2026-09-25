@@ -20,6 +20,7 @@ function parseList(value: string | undefined): string[] {
 
 export interface EnvConfig {
   backendUrl: string;
+  ragAgentUrl: string;
   transport: Transport;
   port: number;
   tokenEnv: string;
@@ -44,8 +45,10 @@ export function loadEnvConfig(env: NodeJS.ProcessEnv): EnvConfig {
     ? parseList(env.INGEST_ALLOWED_EXTENSIONS).map((s) => s.toLowerCase())
     : [...DEFAULT_ALLOWED_EXTENSIONS];
   const allowedRoots = parseList(env.INGEST_ALLOWED_ROOTS);
+  const ragAgentUrl = env.RAG_AGENT_URL ?? "";
   return {
     backendUrl,
+    ragAgentUrl,
     transport: transportRaw as Transport,
     port: Number(env.PORT ?? 8080),
     tokenEnv: env.TOKEN_ENV ?? "GREENNODE_RAG_TOKEN",

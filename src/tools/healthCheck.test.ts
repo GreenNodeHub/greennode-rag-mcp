@@ -1,0 +1,34 @@
+import { describe, it, expect } from "vitest";
+import { healthCheckTool } from "./healthCheck.js";
+import type { BackendClient } from "../http/downstream.js";
+import { testConfig } from "./testDeps.js";
+
+const config = testConfig();
+const scope = { kbIds: null };
+
+describe("healthCheckTool", () => {
+  it("calls rag-agent /health + agent-platform-api /knowledge-bases, returns status+version", async () => {
+    const ragAgent: BackendClient = async (req) => {
+      expect(req.method).toBe("GET");
+      expect(req.path).toBe("/health");
+      return { status: 200, body: { status: "healthy" } };
+    };
+    const backend: BackendClient = async (req) => {
+      expect(req.path).toBe("/knowledge-bases");
+      return { status: 200, body: { items: [{ id: "kb-1" }] } };
+    };
+    const res = await healthCheckTool({ config, backend, ragAgent, scope }, { bearerToken: "t" }, {});
+    expect(res.isError).toBeUndefined();
+    const body = JSON.parse(res.content[0].text);
+    expect(body.status).toBe("ok");
+    expect(body.version).toBeDefined();
+    expect(body.doc_count).toBe(1);
+  });
+  it("maps rag-agent error to httpError", async () => {
+    const ragAgent: BackendClient = async () => ({ status: 503, body: { message: "down" } });
+    const backend: BackendClient = async () => ({ status: 200, body: { items: [] } });
+    const res = await healthCheckTool({ config, backend, ragAgent, scope }, { bearerToken: "t" }, {});
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toBe("HTTP 503: down");
+  });
+});

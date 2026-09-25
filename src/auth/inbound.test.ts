@@ -9,8 +9,32 @@ describe("authenticate", () => {
     expect(() => authenticate({})).toThrow(AuthError);
     try { authenticate({}); } catch (e) { expect((e as AuthError).status).toBe(401); }
   });
-  it("engine is optional", () => {
-    expect(authenticate({ authorization: "Bearer t" })).toEqual({ bearerToken: "t", engine: undefined });
+  it("engine is optional when no header and no env", () => {
+    const prev = process.env.ENGINE;
+    delete process.env.ENGINE;
+    try {
+      expect(authenticate({ authorization: "Bearer t" })).toEqual({ bearerToken: "t", engine: undefined });
+    } finally {
+      if (prev !== undefined) process.env.ENGINE = prev;
+    }
+  });
+  it("falls back to process.env.ENGINE when X-Engine header absent", () => {
+    const prev = process.env.ENGINE;
+    process.env.ENGINE = "env-engine";
+    try {
+      expect(authenticate({ authorization: "Bearer t" })).toEqual({ bearerToken: "t", engine: "env-engine" });
+    } finally {
+      if (prev !== undefined) process.env.ENGINE = prev; else delete process.env.ENGINE;
+    }
+  });
+  it("X-Engine header takes precedence over process.env.ENGINE", () => {
+    const prev = process.env.ENGINE;
+    process.env.ENGINE = "env-engine";
+    try {
+      expect(authenticate({ authorization: "Bearer t", "x-engine": "header-engine" })).toEqual({ bearerToken: "t", engine: "header-engine" });
+    } finally {
+      if (prev !== undefined) process.env.ENGINE = prev; else delete process.env.ENGINE;
+    }
   });
 });
 

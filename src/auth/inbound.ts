@@ -18,7 +18,9 @@ export function authenticate(headers: Headers): AuthContext {
   const auth = header(headers, "authorization") ?? "";
   const match = /^Bearer\s+(.+)$/i.exec(auth.trim());
   if (!match || !match[1]) throw new AuthError(401, "missing upstream token");
-  const engine = header(headers, "x-engine");
+  // Per-request X-Engine header wins; fall back to the process-level ENGINE env
+  // var so `mcp add --transport http --env ENGINE=...` works without a header.
+  const engine = header(headers, "x-engine") || process.env.ENGINE;
   return { bearerToken: match[1], engine: engine || undefined };
 }
 

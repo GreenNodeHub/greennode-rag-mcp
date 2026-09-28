@@ -12,7 +12,7 @@ describe("precheckEngine", () => {
   it("no engine: returns ok with kbIds null (basic-only mode)", async () => {
     const { backend, calls } = backendReturning({ status: 200, body: {} });
     const r = await precheckEngine({ bearerToken: "t" }, { backend });
-    expect(r).toEqual({ ok: true, scope: { engine: undefined, kbIds: null } });
+    expect(r).toEqual({ ok: true, scope: { engine: undefined, engineId: undefined, kbIds: null } });
     expect(calls.length).toBe(0);
   });
   it("engine: exact-matches name and returns its kbIds", async () => {
@@ -21,7 +21,7 @@ describe("precheckEngine", () => {
       { id: "ab-2", name: "myengine", knowledgeBaseInfos: [{ id: "kb-a" }, { id: "kb-b" }] },
     ] } });
     const r = await precheckEngine({ bearerToken: "t", engine: "myengine" }, { backend });
-    expect(r).toEqual({ ok: true, scope: { engine: "myengine", kbIds: ["kb-a", "kb-b"] } });
+    expect(r).toEqual({ ok: true, scope: { engine: "myengine", engineId: "ab-2", kbIds: ["kb-a", "kb-b"] } });
     expect(calls[0]).toMatchObject({ method: "GET", path: "/agents", query: { searchName: "myengine" } });
   });
   it("engine: not found -> fail result", async () => {

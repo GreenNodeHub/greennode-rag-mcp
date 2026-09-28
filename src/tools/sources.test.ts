@@ -4,7 +4,7 @@ import type { BackendClient } from "../http/downstream.js";
 import { testConfig } from "./testDeps.js";
 
 const config = testConfig();
-const scope = { kbIds: null };
+const scope = { kbIds: null, engineId: undefined };
 
 describe("listSourcesTool", () => {
   it("calls agent-platform-api /knowledge-bases and maps to source objects", async () => {
@@ -31,6 +31,7 @@ describe("describeSourceTool", () => {
     const ragAgent: BackendClient = async (req) => {
       expect(req.method).toBe("GET");
       expect(req.path).toBe("/api/v1/knowledge-bases/kb-1/profile");
+      expect(req.query).toMatchObject({ engine_id: undefined });
       return { status: 200, body: { doc_count: 10, fields: [{ name: "domain", type: "string" }], taxonomy_domains: { legal: {} }, domains: [{ key: "legal", count: 5 }], refreshed_at: "2026-01-01" } };
     };
     const res = await describeSourceTool({ config, backend: ragAgent, ragAgent, scope }, { bearerToken: "t" }, { source_id: "kb-1" });

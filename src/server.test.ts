@@ -14,8 +14,8 @@ function fakeFetch(): any {
   return async () => ({ status: 200, text: async () => '{"items":[]}', headers: { get: () => "application/json" } });
 }
 
-const scopeWithKbs: ResolvedScope = { engine: "eng", kbIds: ["kb-1"] };
-const scopeBasic: ResolvedScope = { engine: undefined, kbIds: null };
+const scopeWithKbs: ResolvedScope = { engine: "eng", engineId: "ab-1", kbIds: ["kb-1"] };
+const scopeBasic: ResolvedScope = { engine: undefined, engineId: undefined, kbIds: null };
 
 async function toolNames(cfg: EnvConfig, scope: ResolvedScope = scopeWithKbs): Promise<Record<string, string>> {
   const backend = createBackendClient("https://x", fakeFetch());

@@ -23,9 +23,11 @@ export interface SummarizeArgs {
 
 export async function summarizeTool(deps: HandlerDeps, auth: AuthContext, args: SummarizeArgs): Promise<ToolResult> {
   if (!deps.scope.kbIds) return fail("summarize requires an ENGINE with attached KBs");
+  if (!deps.scope.engineId) return fail("engine_id not resolved — ENGINE precheck found the agent but could not determine its ID");
   const res = await deps.ragAgent({
     method: "POST",
     path: `/api/v1/knowledge-bases/${args.kb_id}/summarize`,
+    query: { engine_id: deps.scope.engineId },
     body: {
       query: args.query,
       chunk_ids: args.chunk_ids,

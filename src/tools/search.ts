@@ -32,6 +32,7 @@ const MODE_KEYWORD_WEIGHT: Record<string, number> = { semantic: 0.0, keyword: 1.
 export async function searchTool(deps: HandlerDeps, auth: AuthContext, args: SearchArgs): Promise<ToolResult> {
   const kbIds = deps.scope.kbIds;
   if (!kbIds || kbIds.length === 0) return fail("no knowledge bases in scope — ENGINE must be set and have attached KBs");
+  if (!deps.scope.engineId) return fail("engine_id not resolved — ENGINE precheck found the agent but could not determine its ID");
   const topK = Math.min(args.top_k ?? 10, 20);
   const mode = args.mode ?? "hybrid";
   const keywordWeight = MODE_KEYWORD_WEIGHT[mode] ?? 0.3;
@@ -39,6 +40,7 @@ export async function searchTool(deps: HandlerDeps, auth: AuthContext, args: Sea
   const res = await deps.ragAgent({
     method: "POST",
     path: `/api/v1/knowledge-bases/${kbIds.join(",")}/search`,
+    query: { engine_id: deps.scope.engineId },
     body: {
       query: args.query,
       limit: topK,

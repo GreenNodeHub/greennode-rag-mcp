@@ -10,6 +10,9 @@ import { itemsOf } from "./util/list.js";
  */
 export interface ResolvedScope {
   engine?: string;
+  /** Agent builder ID (e.g. "ab-...") — the `l` the rag-agent/backend expect
+   * as ?engine_id= to resolve the brokered MaaS key. Undefined in basic-only mode. */
+  engineId?: string;
   kbIds: string[] | null;
 }
 
@@ -30,13 +33,13 @@ export interface ScopeDeps {
  * can fail fast (stdio) or reject the request (http).
  */
 export async function precheckEngine(auth: AuthContext, deps: ScopeDeps): Promise<EngineScope> {
-  if (!auth.engine) return { ok: true, scope: { engine: undefined, kbIds: null } };
+  if (!auth.engine) return { ok: true, scope: { engine: undefined, engineId: undefined, kbIds: null } };
   const res = await deps.backend({ method: "GET", path: "/agents", query: { searchName: auth.engine }, bearerToken: auth.bearerToken });
   if (res.status >= 400) return { ok: false, result: httpError(res.status, res.body) };
   const match = itemsOf(res.body).find((a: any) => a?.name === auth.engine);
   if (!match) return { ok: false, result: fail(`engine not found: ${auth.engine}`) };
   const kbIds = (match.knowledgeBaseInfos ?? []).map((k: any) => k?.id).filter(Boolean);
-  return { ok: true, scope: { engine: auth.engine, kbIds } };
+  return { ok: true, scope: { engine: auth.engine, engineId: match.id, kbIds } };
 }
 
 /**

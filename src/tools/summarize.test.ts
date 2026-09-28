@@ -4,7 +4,7 @@ import type { BackendClient } from "../http/downstream.js";
 import { testConfig } from "./testDeps.js";
 
 const config = testConfig();
-const scopeWithKbs = { engine: "eng", kbIds: ["kb-1"] };
+const scopeWithKbs = { engine: "eng", engineId: "ab-1", kbIds: ["kb-1"] };
 const scopeBasic = { kbIds: null };
 
 describe("summarizeTool", () => {
@@ -12,6 +12,7 @@ describe("summarizeTool", () => {
     const ragAgent: BackendClient = async (req) => {
       expect(req.method).toBe("POST");
       expect(req.path).toBe("/api/v1/knowledge-bases/kb-1/summarize");
+      expect(req.query).toMatchObject({ engine_id: "ab-1" });
       expect(req.body).toMatchObject({ query: "q", chunk_ids: ["c1", "c2"], max_tokens: 256, format: "prose" });
       return { status: 200, body: { summary: "answer", sources: [{ chunk_id: "c1", snippet: "s", score: 0.9 }], confidence: 0.85 } };
     };

@@ -47,6 +47,7 @@ export interface DescribeSourceArgs {
 export async function describeSourceTool(deps: HandlerDeps, auth: AuthContext, args: DescribeSourceArgs): Promise<ToolResult> {
   const res = await deps.ragAgent({
     method: "GET", path: `/api/v1/knowledge-bases/${args.source_id}/profile`,
+    query: { engine_id: deps.scope.engineId },
     bearerToken: auth.bearerToken,
   });
   if (res.status >= 400) return httpError(res.status, res.body);

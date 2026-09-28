@@ -4,14 +4,15 @@ import type { BackendClient } from "../http/downstream.js";
 import { testConfig } from "./testDeps.js";
 
 const config = testConfig();
-const scopeWithKbs = { engine: "eng", kbIds: ["kb-1"] };
-const scopeEmpty = { engine: undefined, kbIds: null };
+const scopeWithKbs = { engine: "eng", engineId: "ab-1", kbIds: ["kb-1"] };
+const scopeEmpty = { engine: undefined, engineId: undefined, kbIds: null };
 
 describe("searchTool", () => {
   it("POSTs to rag-agent /search with engine-scoped KB, returns results", async () => {
     const ragAgent: BackendClient = async (req) => {
       expect(req.method).toBe("POST");
       expect(req.path).toBe("/api/v1/knowledge-bases/kb-1/search");
+      expect(req.query).toMatchObject({ engine_id: "ab-1" });
       expect(req.body).toMatchObject({ query: "q", limit: 10, similarity_threshold: 0.2, keyword_weight: 0.3, offset: 0, rerank: false });
       return { status: 200, body: { results: [{ chunk_id: "c1", doc_id: "d", score: 0.9, snippet: "s", metadata: {}, token_estimate: 10 }], total_found: 1 } };
     };

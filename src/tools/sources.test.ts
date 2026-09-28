@@ -24,6 +24,24 @@ describe("listSourcesTool", () => {
     const res = await listSourcesTool({ config, backend, ragAgent: backend, scope }, { bearerToken: "t" }, {});
     expect(res.isError).toBe(true);
   });
+  it("engine-scoped: returns only the engine's KBs (no backend call)", async () => {
+    const engineScope = { kbIds: ["kb_a1", "kb_b2"], engineId: "ab-1", engine: "eng" };
+    let backendCalled = false;
+    const backend: BackendClient = async () => { backendCalled = true; return { status: 200, body: {} }; };
+    const res = await listSourcesTool({ config, backend, ragAgent: backend, scope: engineScope }, { bearerToken: "t" }, {});
+    expect(backendCalled).toBe(false);
+    const body = JSON.parse(res.content[0].text);
+    expect(body.results).toEqual([{ source_id: "kb_a1", title: "kb_a1" }, { source_id: "kb_b2", title: "kb_b2" }]);
+    expect(body.total).toBe(2);
+  });
+  it("engine-scoped: paginates correctly", async () => {
+    const engineScope = { kbIds: ["kb_a1", "kb_b2", "kb_c3"], engineId: "ab-1", engine: "eng" };
+    const backend: BackendClient = async () => ({ status: 200, body: {} });
+    const res = await listSourcesTool({ config, backend, ragAgent: backend, scope: engineScope }, { bearerToken: "t" }, { page: 2, size: 1 });
+    const body = JSON.parse(res.content[0].text);
+    expect(body.results).toEqual([{ source_id: "kb_b2", title: "kb_b2" }]);
+    expect(body.total).toBe(3);
+  });
 });
 
 describe("describeSourceTool", () => {

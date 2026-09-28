@@ -21,7 +21,7 @@ export function createApp(deps: AppDeps): express.Express {
       res.status(err.status ?? 401).json({ error: err.message });
       return;
     }
-    const precheck = await precheckEngine(auth, { backend: deps.backend });
+    const precheck = await precheckEngine(auth, { backend: deps.backend, ragAgent: deps.ragAgent });
     if (!precheck.ok) {
       res.status(403).json({ error: { code: "ENGINE_NOT_FOUND", message: `engine not found: ${auth.engine}` } });
       return;

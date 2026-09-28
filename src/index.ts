@@ -26,7 +26,7 @@ if (config.transport === "http") {
     log.error("startup failed", { error: (e as Error).message });
     process.exit(1);
   }
-  const precheck = await precheckEngine(auth, { backend });
+  const precheck = await precheckEngine(auth, { backend, ragAgent });
   if (!precheck.ok) {
     log.error("engine precheck failed", { engine: auth.engine, error: precheck.result.content[0].text });
     process.exit(1);

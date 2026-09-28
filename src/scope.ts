@@ -23,12 +23,21 @@ export type EngineScope = { ok: true; scope: ResolvedScope } | { ok: false; resu
 
 export interface ScopeDeps {
   backend: BackendClient;
+  ragAgent: BackendClient;
 }
 
 /**
- * Precheck the ENGINE (agent name) against agent-platform-api before registering
- * advanced tools. If `auth.engine` is unset, returns `{ ok: true, scope: { kbIds: null } }`
- * (basic-only mode). If set, resolves it to KB IDs via `GET /agents?searchName=`.
+ * Precheck the ENGINE (agent name) before registering advanced tools.
+ *
+ * Two-step resolution:
+ * 1. agent-platform-api `GET /agents?searchName=` — resolve name → agent builder ID
+ * 2. rag-agent `GET /api/v1/engines/{id}` — resolve agent builder ID → green-rag KB IDs
+ *
+ * The KB IDs from step 2 (``kb_<hex>``) are what the dataplane search/profile/summarize
+ * routes expect. Step 1's ``knowledgeBaseInfos[].id`` are aip IDs (``kb-<uuid>``) which
+ * the rag-agent/backend do not recognise.
+ *
+ * If `auth.engine` is unset, returns `{ ok: true, scope: { kbIds: null } }` (basic-only mode).
  * On not-found or backend error, returns `{ ok: false, result }` so the caller
  * can fail fast (stdio) or reject the request (http).
  */
@@ -38,7 +47,13 @@ export async function precheckEngine(auth: AuthContext, deps: ScopeDeps): Promis
   if (res.status >= 400) return { ok: false, result: httpError(res.status, res.body) };
   const match = itemsOf(res.body).find((a: any) => a?.name === auth.engine);
   if (!match) return { ok: false, result: fail(`engine not found: ${auth.engine}`) };
-  const kbIds = (match.knowledgeBaseInfos ?? []).map((k: any) => k?.id).filter(Boolean);
+  // Resolve green-rag KB IDs via the rag-agent (aip KB IDs from knowledgeBaseInfos
+  // are kb-<uuid>; the dataplane needs kb_<hex> from the backend engine record).
+  const engRes = await deps.ragAgent({ method: "GET", path: `/api/v1/engines/${match.id}`, bearerToken: auth.bearerToken });
+  if (engRes.status >= 400) return { ok: false, result: httpError(engRes.status, engRes.body) };
+  const engBody = engRes.body as any;
+  const kbField = engBody?.knowledge_base_ids ?? engBody?.data?.knowledge_base_ids;
+  const kbIds = Array.isArray(kbField) ? kbField.filter(Boolean) : (kbField?.items ?? []).filter(Boolean);
   return { ok: true, scope: { engine: auth.engine, engineId: match.id, kbIds } };
 }
 

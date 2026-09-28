@@ -16,7 +16,7 @@ export const ListKnowledgeBasesInputSchema = {
 };
 export async function listKnowledgeBasesTool(deps: HandlerDeps, auth: AuthContext, args: { page?: number; size?: number; searchName?: string; sortBy?: string; sortDirection?: string }): Promise<ToolResult> {
   if (auth.engine) {
-    const precheck = await precheckEngine(auth, { backend: deps.backend });
+    const precheck = await precheckEngine(auth, { backend: deps.backend, ragAgent: deps.ragAgent });
     if (!precheck.ok) return precheck.result;
     const allowed = new Set(precheck.scope.kbIds ?? []);
     const res = await deps.backend({ method: "GET", path: "/knowledge-bases", query: { page: 1, size: 100 }, bearerToken: auth.bearerToken });

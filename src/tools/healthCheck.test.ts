@@ -4,7 +4,7 @@ import type { BackendClient } from "../http/downstream.js";
 import { testConfig } from "./testDeps.js";
 
 const config = testConfig();
-const scope = { kbIds: null };
+const scope = { kbIds: null, engineId: undefined };
 
 describe("healthCheckTool", () => {
   it("calls rag-agent /health + agent-platform-api /knowledge-bases, returns status+version", async () => {
@@ -30,5 +30,17 @@ describe("healthCheckTool", () => {
     const res = await healthCheckTool({ config, backend, ragAgent, scope }, { bearerToken: "t" }, {});
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toBe("HTTP 503: down");
+  });
+  it("engine-scoped: reports engine KB count without calling agent-platform-api", async () => {
+    const engineScope = { kbIds: ["kb_a1", "kb_b2"], engineId: "ab-1", engine: "eng" };
+    let backendCalled = false;
+    const ragAgent: BackendClient = async (req) => { expect(req.path).toBe("/health"); return { status: 200, body: { status: "healthy" } }; };
+    const backend: BackendClient = async () => { backendCalled = true; return { status: 200, body: {} }; };
+    const res = await healthCheckTool({ config, backend, ragAgent, scope: engineScope }, { bearerToken: "t" }, {});
+    expect(backendCalled).toBe(false);
+    const body = JSON.parse(res.content[0].text);
+    expect(body.doc_count).toBe(2);
+    expect(body.engine).toBe("eng");
+    expect(body.engine_id).toBe("ab-1");
   });
 });

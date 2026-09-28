@@ -19,6 +19,18 @@ export interface ListSourcesArgs {
 }
 
 export async function listSourcesTool(deps: HandlerDeps, auth: AuthContext, args: ListSourcesArgs): Promise<ToolResult> {
+  // Engine-scoped mode: return only the KBs attached to the engine. The KB IDs
+  // are green-rag IDs (kb_<hex>) resolved during precheck — no backend call
+  // needed. Names/doc counts are fetched on demand via describe_source.
+  if (deps.scope.kbIds) {
+    const page = args.page ?? 1;
+    const size = args.size ?? deps.config.defaultPageSize;
+    const start = (page - 1) * size;
+    const paged = deps.scope.kbIds.slice(start, start + size);
+    const sources = paged.map((id) => ({ source_id: id, title: id }));
+    return okList({ results: sources, total: deps.scope.kbIds.length }, deps.config.maxResponseBytes);
+  }
+  // Basic mode (no engine): list all KBs in the account from agent-platform-api.
   const res = await deps.backend({
     method: "GET", path: "/knowledge-bases",
     query: { page: args.page ?? 1, size: args.size ?? deps.config.defaultPageSize, searchName: args.searchName },

@@ -16,7 +16,11 @@ describe("listKnowledgeBasesTool", () => {
       if (req.path === "/agents") return { status: 200, body: { listData:[{ id: "ab-1", name: "eng", knowledgeBaseInfos: [{ id: "kb-2" }] }] } };
       return { status: 200, body: { listData:[{ id: "kb-1", name: "a" }, { id: "kb-2", name: "b" }] } };
     };
-    const res = await listKnowledgeBasesTool({ config, backend, ragAgent: backend, scope: { kbIds: null } }, { bearerToken: "t", engine: "eng" }, {});
+    const ragAgent: BackendClient = async (req) => {
+      if (req.path.startsWith("/api/v1/engines/")) return { status: 200, body: { knowledge_base_ids: ["kb-2"] } };
+      return { status: 200, body: {} };
+    };
+    const res = await listKnowledgeBasesTool({ config, backend, ragAgent, scope: { kbIds: null } }, { bearerToken: "t", engine: "eng" }, {});
     expect(JSON.parse(res.content[0].text)).toEqual([{ id: "kb-2", name: "b" }]);
   });
 });

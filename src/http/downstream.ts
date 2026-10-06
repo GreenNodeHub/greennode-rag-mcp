@@ -25,6 +25,19 @@ export interface BackendResponse {
   contentDisposition?: string;
 }
 
+/**
+ * Unwrap a StandardResponse envelope `{success, data, message}` → `data`.
+ * Tolerates raw payloads (no envelope) by returning the body as-is.
+ * The rag-agent wraps all dataplane responses in this envelope; the MCP
+ * server needs the inner `data` to read profile/search/summarize results.
+ */
+export function unwrap(body: unknown): unknown {
+  if (body && typeof body === "object" && "data" in body && "success" in (body as any)) {
+    return (body as any).data;
+  }
+  return body;
+}
+
 export type BackendClient = (req: BackendCall) => Promise<BackendResponse>;
 
 function joinUrl(base: string, path: string): string {

@@ -3,6 +3,7 @@ import type { HandlerDeps } from "./types.js";
 import type { AuthContext } from "../auth/inbound.js";
 import type { ToolResult } from "../util/result.js";
 import { ok, okList, httpError } from "../util/result.js";
+import { unwrap } from "../http/downstream.js";
 import { KbId } from "../schema/backend.js";
 import { itemsOf } from "../util/list.js";
 
@@ -27,7 +28,7 @@ export async function listSourcesTool(deps: HandlerDeps, auth: AuthContext, args
     const size = args.size ?? deps.config.defaultPageSize;
     const start = (page - 1) * size;
     const paged = deps.scope.kbIds.slice(start, start + size);
-    const sources = paged.map((id) => ({ source_id: id, title: id }));
+    const sources = paged.map((id) => ({ source_id: id, title: deps.scope.kbNames?.[id] ?? id, doc_count: deps.scope.kbDocCounts?.[id] }));
     return okList({ results: sources, total: deps.scope.kbIds.length }, deps.config.maxResponseBytes);
   }
   // Basic mode (no engine): list all KBs in the account from agent-platform-api.
@@ -63,7 +64,7 @@ export async function describeSourceTool(deps: HandlerDeps, auth: AuthContext, a
     bearerToken: auth.bearerToken,
   });
   if (res.status >= 400) return httpError(res.status, res.body);
-  const profile = res.body as any;
+  const profile = unwrap(res.body) as any;
   return ok({
     source_id: args.source_id,
     doc_count: profile?.doc_count ?? 0,

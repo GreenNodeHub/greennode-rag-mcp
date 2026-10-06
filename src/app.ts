@@ -23,7 +23,8 @@ export function createApp(deps: AppDeps): express.Express {
     }
     const precheck = await precheckEngine(auth, { backend: deps.backend, ragAgent: deps.ragAgent });
     if (!precheck.ok) {
-      res.status(403).json({ error: { code: "ENGINE_NOT_FOUND", message: `engine not found: ${auth.engine}` } });
+      const status = precheck.errorCode === "ENGINE_NOT_FOUND" ? 404 : 403;
+      res.status(status).json({ error: { code: precheck.errorCode, message: precheck.result.content[0].text } });
       return;
     }
     const server = createMcpServer(deps, auth, precheck.scope);

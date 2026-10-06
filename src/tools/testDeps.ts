@@ -24,7 +24,7 @@ export function testDeps(overrides: Partial<HandlerDeps> = {}): HandlerDeps {
     config: testConfig(),
     backend: noopBackend,
     ragAgent: noopBackend,
-    scope: { kbIds: null, engineId: undefined } as ResolvedScope,
+    scope: { kbIds: null, engineId: undefined, kbNames: undefined, kbDocCounts: undefined } as ResolvedScope,
     ...overrides,
   };
 }

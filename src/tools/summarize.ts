@@ -3,6 +3,7 @@ import type { HandlerDeps } from "./types.js";
 import type { AuthContext } from "../auth/inbound.js";
 import type { ToolResult } from "../util/result.js";
 import { ok, httpError, fail } from "../util/result.js";
+import { unwrap } from "../http/downstream.js";
 import { KbId } from "../schema/backend.js";
 
 export const SummarizeInputSchema = {
@@ -37,5 +38,5 @@ export async function summarizeTool(deps: HandlerDeps, auth: AuthContext, args: 
     bearerToken: auth.bearerToken,
   });
   if (res.status >= 400) return httpError(res.status, res.body);
-  return ok(res.body);
+  return ok(unwrap(res.body));
 }

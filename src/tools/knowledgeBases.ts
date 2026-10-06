@@ -36,7 +36,7 @@ export const CreateKnowledgeBaseInputSchema = {
   name: z.string(), description: z.string(), embeddingModel: z.string(),
   llmModel: z.string().optional().describe("Optional LLM/chat model id (uuid or path) for metadata extraction. Pass a value from list_models(type=chat). If omitted, the backend uses a default."),
   parsingMethod: z.string(), chunkingMethod: z.string(),
-  chunkSize: z.number().int().min(1).max(1000).optional(),
+  chunkSize: z.number().int().min(1).max(812).optional(),
   overlappedPercent: z.number().int().min(1).max(50).optional(),
 };
 export async function createKnowledgeBaseTool(deps: HandlerDeps, auth: AuthContext, args: { name: string; description: string; embeddingModel: string; llmModel?: string; parsingMethod: string; chunkingMethod: string; chunkSize?: number; overlappedPercent?: number }): Promise<ToolResult> {

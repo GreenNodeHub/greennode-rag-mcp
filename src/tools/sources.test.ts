@@ -4,7 +4,7 @@ import type { BackendClient } from "../http/downstream.js";
 import { testConfig } from "./testDeps.js";
 
 const config = testConfig();
-const scope = { kbIds: null, engineId: undefined };
+const scope = { kbIds: null, engineId: undefined, kbNames: undefined, kbDocCounts: undefined };
 
 describe("listSourcesTool", () => {
   it("calls agent-platform-api /knowledge-bases and maps to source objects", async () => {
@@ -25,21 +25,21 @@ describe("listSourcesTool", () => {
     expect(res.isError).toBe(true);
   });
   it("engine-scoped: returns only the engine's KBs (no backend call)", async () => {
-    const engineScope = { kbIds: ["kb_a1", "kb_b2"], engineId: "ab-1", engine: "eng" };
+    const engineScope = { kbIds: ["kb_a1", "kb_b2"], engineId: "ab-1", engine: "eng", kbNames: { kb_a1: "Legal KB", kb_b2: "Finance KB" }, kbDocCounts: { kb_a1: 149, kb_b2: 30 } };
     let backendCalled = false;
     const backend: BackendClient = async () => { backendCalled = true; return { status: 200, body: {} }; };
     const res = await listSourcesTool({ config, backend, ragAgent: backend, scope: engineScope }, { bearerToken: "t" }, {});
     expect(backendCalled).toBe(false);
     const body = JSON.parse(res.content[0].text);
-    expect(body.results).toEqual([{ source_id: "kb_a1", title: "kb_a1" }, { source_id: "kb_b2", title: "kb_b2" }]);
+    expect(body.results).toEqual([{ source_id: "kb_a1", title: "Legal KB", doc_count: 149 }, { source_id: "kb_b2", title: "Finance KB", doc_count: 30 }]);
     expect(body.total).toBe(2);
   });
   it("engine-scoped: paginates correctly", async () => {
-    const engineScope = { kbIds: ["kb_a1", "kb_b2", "kb_c3"], engineId: "ab-1", engine: "eng" };
+    const engineScope = { kbIds: ["kb_a1", "kb_b2", "kb_c3"], engineId: "ab-1", engine: "eng", kbNames: { kb_a1: "A", kb_b2: "B", kb_c3: "C" }, kbDocCounts: {} };
     const backend: BackendClient = async () => ({ status: 200, body: {} });
     const res = await listSourcesTool({ config, backend, ragAgent: backend, scope: engineScope }, { bearerToken: "t" }, { page: 2, size: 1 });
     const body = JSON.parse(res.content[0].text);
-    expect(body.results).toEqual([{ source_id: "kb_b2", title: "kb_b2" }]);
+    expect(body.results).toEqual([{ source_id: "kb_b2", title: "B", doc_count: undefined }]);
     expect(body.total).toBe(3);
   });
 });
@@ -50,7 +50,7 @@ describe("describeSourceTool", () => {
       expect(req.method).toBe("GET");
       expect(req.path).toBe("/api/v1/knowledge-bases/kb-1/profile");
       expect(req.query).toMatchObject({ engine_id: undefined });
-      return { status: 200, body: { doc_count: 10, fields: [{ name: "domain", type: "string" }], taxonomy_domains: { legal: {} }, domains: [{ key: "legal", count: 5 }], refreshed_at: "2026-01-01" } };
+      return { status: 200, body: { success: true, data: { doc_count: 10, fields: [{ name: "domain", type: "string" }], taxonomy_domains: { legal: {} }, domains: [{ key: "legal", count: 5 }], refreshed_at: "2026-01-01" }, message: "ok" } };
     };
     const res = await describeSourceTool({ config, backend: ragAgent, ragAgent, scope }, { bearerToken: "t" }, { source_id: "kb-1" });
     const body = JSON.parse(res.content[0].text);

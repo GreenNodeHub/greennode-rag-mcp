@@ -12,7 +12,7 @@ describe("buildDocumentFilter", () => {
   });
   it("returns a compound AND for many", () => {
     const f = buildDocumentFilter([{ key: "a", op: "equals", value: 1 }, { key: "b", op: "startsWith", value: "x" }]);
-    expect(f).toEqual({ kind: "compound", type: "AND", filters: [
+    expect(f).toEqual({ kind: "compound", type: "andAll", filters: [
       { kind: "simple", type: "equals", key: "a", value: 1 },
       { kind: "simple", type: "startsWith", key: "b", value: "x" },
     ] });

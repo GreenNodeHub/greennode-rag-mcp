@@ -3,6 +3,7 @@ import type { HandlerDeps } from "./types.js";
 import type { AuthContext } from "../auth/inbound.js";
 import type { ToolResult } from "../util/result.js";
 import { ok, httpError, fail } from "../util/result.js";
+import { unwrap } from "../http/downstream.js";
 import { buildDocumentFilter, SimpleFilter } from "../schema/backend.js";
 
 export const SearchInputSchema = {
@@ -13,7 +14,6 @@ export const SearchInputSchema = {
   offset: z.number().int().min(0).optional().describe("pagination cursor (default 0)"),
   mode: z.enum(["semantic", "keyword", "hybrid"]).optional().describe("retrieval mode (default hybrid)"),
   rerank: z.boolean().optional().describe("apply cross-encoder reranking after retrieval (default false)"),
-  rerank_model: z.string().optional().describe("rerank model id, e.g. cohere-rerank-v3"),
 };
 
 export interface SearchArgs {
@@ -24,7 +24,6 @@ export interface SearchArgs {
   offset?: number;
   mode?: "semantic" | "keyword" | "hybrid";
   rerank?: boolean;
-  rerank_model?: string;
 }
 
 const MODE_KEYWORD_WEIGHT: Record<string, number> = { semantic: 0.0, keyword: 1.0, hybrid: 0.3 };
@@ -49,10 +48,9 @@ export async function searchTool(deps: HandlerDeps, auth: AuthContext, args: Sea
       document_filter: buildDocumentFilter(args.filters),
       offset: args.offset ?? 0,
       rerank: args.rerank ?? false,
-      rerank_model: args.rerank_model,
     },
     bearerToken: auth.bearerToken,
   });
   if (res.status >= 400) return httpError(res.status, res.body);
-  return ok(res.body);
+  return ok(unwrap(res.body));
 }

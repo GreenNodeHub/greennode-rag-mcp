@@ -4,8 +4,8 @@ import type { BackendClient } from "../http/downstream.js";
 import { testConfig } from "./testDeps.js";
 
 const config = testConfig();
-const scopeWithKbs = { engine: "eng", engineId: "ab-1", kbIds: ["kb-1"] };
-const scopeEmpty = { engine: undefined, engineId: undefined, kbIds: null };
+const scopeWithKbs = { engine: "eng", engineId: "ab-1", kbIds: ["kb-1"], kbNames: undefined, kbDocCounts: undefined };
+const scopeEmpty = { engine: undefined, engineId: undefined, kbIds: null, kbNames: undefined, kbDocCounts: undefined };
 
 describe("searchTool", () => {
   it("POSTs to rag-agent /search with engine-scoped KB, returns results", async () => {
@@ -41,7 +41,7 @@ describe("searchTool", () => {
 
   it("builds document_filter from filters array", async () => {
     const ragAgent: BackendClient = async (req) => {
-      expect((req.body as any).document_filter).toEqual({ kind: "compound", type: "AND", filters: [
+      expect((req.body as any).document_filter).toEqual({ kind: "compound", type: "andAll", filters: [
         { kind: "simple", type: "equals", key: "a", value: 1 },
         { kind: "simple", type: "startsWith", key: "b", value: "x" },
       ] });
@@ -50,13 +50,12 @@ describe("searchTool", () => {
     await searchTool({ config, backend: async () => ({ status: 200, body: {} }), ragAgent, scope: scopeWithKbs }, { bearerToken: "t" }, { query: "q", filters: [{ key: "a", op: "equals", value: 1 }, { key: "b", op: "startsWith", value: "x" }] });
   });
 
-  it("forwards rerank and rerank_model", async () => {
+  it("forwards rerank flag", async () => {
     const ragAgent: BackendClient = async (req) => {
       expect((req.body as any).rerank).toBe(true);
-      expect((req.body as any).rerank_model).toBe("cohere-rerank-v3");
       return { status: 200, body: { results: [], total_found: 0 } };
     };
-    await searchTool({ config, backend: async () => ({ status: 200, body: {} }), ragAgent, scope: scopeWithKbs }, { bearerToken: "t" }, { query: "q", rerank: true, rerank_model: "cohere-rerank-v3" });
+    await searchTool({ config, backend: async () => ({ status: 200, body: {} }), ragAgent, scope: scopeWithKbs }, { bearerToken: "t" }, { query: "q", rerank: true });
   });
 
   it("fails when no engine/scope (kbIds is null)", async () => {

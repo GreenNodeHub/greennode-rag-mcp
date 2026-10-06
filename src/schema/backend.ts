@@ -17,7 +17,7 @@ export function buildDocumentFilter(filters?: { key: string; op: string; value: 
   if (!filters || filters.length === 0) return undefined;
   const toSimple = (f: { key: string; op: string; value: any }) => ({ kind: "simple", type: f.op, key: f.key, value: f.value });
   if (filters.length === 1) return toSimple(filters[0]);
-  return { kind: "compound", type: "AND", filters: filters.map(toSimple) };
+  return { kind: "compound", type: "andAll", filters: filters.map(toSimple) };
 }
 
 export interface AIPlatformModelType { types: string[]; }
